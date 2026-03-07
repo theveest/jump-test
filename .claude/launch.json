@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "jump-neon",
+      "runtimeExecutable": "/usr/bin/python3",
+      "runtimeArgs": ["-m", "http.server", "8080", "--directory", "/Users/viestenz/Desktop/jump-neon"],
+      "port": 8080
+    }
+  ]
+}

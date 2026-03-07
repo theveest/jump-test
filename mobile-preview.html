@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>iPhone 15 Mobile Preview</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #1a1a2e;
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    /* iPhone 15 shell */
+    .phone {
+      width: 393px;
+      height: 852px;
+      background: #111;
+      border-radius: 54px;
+      box-shadow:
+        0 0 0 2px #333,
+        0 0 0 4px #555,
+        0 0 60px rgba(0,0,0,.8),
+        inset 0 0 0 2px #222;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Dynamic island */
+    .dynamic-island {
+      position: absolute;
+      top: 12px; left: 50%;
+      transform: translateX(-50%);
+      width: 126px; height: 37px;
+      background: #000;
+      border-radius: 20px;
+      z-index: 100;
+    }
+
+    /* Screen */
+    .screen {
+      position: absolute;
+      inset: 0;
+      border-radius: 54px;
+      overflow: hidden;
+      background: linear-gradient(160deg, #1a3a5c 0%, #0d1f3c 40%, #080c18 100%);
+    }
+
+    /* Simulated 3D game view */
+    .game-bg {
+      position: absolute; inset: 0;
+      background:
+        radial-gradient(ellipse at 30% 60%, rgba(255,120,0,.08) 0%, transparent 55%),
+        radial-gradient(ellipse at 70% 40%, rgba(255,80,0,.06) 0%, transparent 45%),
+        linear-gradient(180deg, #0d1118 0%, #1a0d00 100%);
+    }
+
+    /* Lava glow from below */
+    .lava-glow {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 160px;
+      background: linear-gradient(0deg, rgba(200,50,0,.35) 0%, transparent 100%);
+    }
+
+    /* Fake platforms */
+    .platform {
+      position: absolute;
+      height: 6px;
+      border-radius: 2px;
+    }
+
+    /* ── HUD (top-left) ── */
+    .hud {
+      position: absolute; top: 60px; left: 12px;
+      font: 11px/1.4 system-ui;
+      color: #e6edf3; background: rgba(0,0,0,.38);
+      padding: 7px 10px; border-radius: 10px;
+      backdrop-filter: blur(6px);
+    }
+    .hud strong { font-size: 12px; }
+    .hud-controls { font-size: 9.5px; color: rgba(255,255,255,.6); margin-top: 2px; }
+
+    /* ── Timer (top-right) ── */
+    .timer {
+      position: absolute; top: 60px; right: 12px;
+      font: bold 18px/1 system-ui;
+      color: #fff; background: rgba(0,0,0,.38);
+      padding: 7px 12px; border-radius: 10px;
+    }
+
+    /* ── Progress area (bottom center) ── */
+    .progress-area {
+      position: absolute;
+      bottom: 210px; left: 50%;
+      transform: translateX(-50%);
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+    }
+    .level-name-hud {
+      font: 600 10px/1 system-ui; color: rgba(255,255,255,.60);
+      letter-spacing: .12em; text-transform: uppercase;
+      text-shadow: 0 1px 5px rgba(0,0,0,.9);
+    }
+    .progress-wrap {
+      width: 220px; height: 7px;
+      background: rgba(0,0,0,.30); border-radius: 4px; overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%; width: 38%;
+      background: #FFD700; border-radius: 4px;
+      box-shadow: 0 0 8px rgba(255,215,0,.55);
+    }
+
+    /* ── D-pad (bottom-left) ── */
+    .dpad {
+      position: absolute;
+      bottom: 36px; left: 28px;
+      width: 154px; height: 154px;
+    }
+    .dpad-btn {
+      position: absolute;
+      width: 52px; height: 52px;
+      background: rgba(255,255,255,.14);
+      border: 1px solid rgba(255,255,255,.28);
+      border-radius: 12px;
+      color: #fff; font-size: 18px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .dpad-btn.active { background: rgba(255,255,255,.34); }
+    .dpad-up    { top: 0;    left: 51px; }
+    .dpad-left  { top: 51px; left: 0;    }
+    .dpad-right { top: 51px; left: 102px; }
+    .dpad-down  { top: 102px; left: 51px; }
+
+    /* ── Right controls ── */
+    .right-controls {
+      position: absolute;
+      bottom: 36px; right: 28px;
+      display: flex; flex-direction: column;
+      align-items: center; gap: 14px;
+    }
+    .btn-jump {
+      width: 88px; height: 88px; border-radius: 50%;
+      background: rgba(255,215,0,.20);
+      border: 2px solid rgba(255,215,0,.55);
+      color: #FFD700; font: 700 14px/1 system-ui;
+      letter-spacing: .06em;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .btn-reset {
+      width: 50px; height: 50px; border-radius: 50%;
+      background: rgba(255,255,255,.12);
+      border: 1px solid rgba(255,255,255,.22);
+      color: rgba(255,255,255,.70); font: 600 14px/1 system-ui;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* Label callouts */
+    .label {
+      position: absolute;
+      font: 600 10px system-ui;
+      color: rgba(255,255,200,.75);
+      background: rgba(0,0,0,.5);
+      padding: 3px 7px; border-radius: 6px;
+      white-space: nowrap;
+    }
+    .label::before {
+      content: '';
+      position: absolute;
+      width: 1px; background: rgba(255,255,200,.4);
+    }
+
+    /* Outer annotation labels (outside phone) */
+    .outer-label {
+      position: absolute;
+      font: 500 12px system-ui;
+      color: rgba(200,200,255,.75);
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+<div style="position:relative;">
+
+  <!-- Phone shell -->
+  <div class="phone">
+    <div class="dynamic-island"></div>
+
+    <div class="screen">
+      <div class="game-bg"></div>
+      <div class="lava-glow"></div>
+
+      <!-- Fake platforms -->
+      <div class="platform" style="width:90px; left:80px; top:380px; background:#FF5500; box-shadow:0 0 8px #FF5500;"></div>
+      <div class="platform" style="width:60px; left:200px; top:355px; background:#FF8800; box-shadow:0 0 8px #FF8800;"></div>
+      <div class="platform" style="width:50px; left:290px; top:335px; background:#FFAA00; box-shadow:0 0 8px #FFAA00;"></div>
+      <div class="platform" style="width:70px; left:150px; top:410px; background:#FF3300; box-shadow:0 0 8px #FF3300;"></div>
+
+      <!-- Fake player (small red box) -->
+      <div style="position:absolute; left:118px; top:358px; width:14px; height:18px; background:#EE2222; border-radius:2px; box-shadow:0 0 6px rgba(255,0,0,.4);"></div>
+
+      <!-- HUD -->
+      <div class="hud">
+        <strong>JUMP</strong>
+        <div class="hud-controls">↑←↓→ Move &nbsp; Space Jump</div>
+      </div>
+
+      <!-- Timer -->
+      <div class="timer">0:14.3</div>
+
+      <!-- Progress area -->
+      <div class="progress-area">
+        <div class="level-name-hud">Volcanic Lava World</div>
+        <div class="progress-wrap">
+          <div class="progress-fill"></div>
+        </div>
+      </div>
+
+      <!-- D-pad -->
+      <div class="dpad">
+        <div class="dpad-btn dpad-up">▲</div>
+        <div class="dpad-btn dpad-left">◀</div>
+        <div class="dpad-btn dpad-right">▶</div>
+        <div class="dpad-btn dpad-down">▼</div>
+      </div>
+
+      <!-- Right controls -->
+      <div class="right-controls">
+        <div class="btn-jump">JUMP</div>
+        <div class="btn-reset">R</div>
+      </div>
+
+    </div><!-- /screen -->
+  </div><!-- /phone -->
+
+  <!-- Annotation lines + labels outside -->
+  <div class="outer-label" style="top:68px; left:-148px; text-align:right;">HUD / controls info<br><span style="color:rgba(255,255,255,.35);font-size:10px;">hidden on mobile if desired</span></div>
+  <div style="position:absolute; top:80px; left:-10px; width:50px; height:1px; background:rgba(200,200,255,.3);"></div>
+
+  <div class="outer-label" style="top:68px; right:-130px;">Timer</div>
+  <div style="position:absolute; top:80px; right:-10px; width:40px; height:1px; background:rgba(200,200,255,.3);"></div>
+
+  <div class="outer-label" style="bottom:250px; left:-148px; text-align:right;">Level name +<br>progress bar</div>
+  <div style="position:absolute; bottom:225px; left:-10px; width:50px; height:1px; background:rgba(200,200,255,.3);"></div>
+
+  <div class="outer-label" style="bottom:100px; left:-80px; text-align:right;">D-pad</div>
+  <div style="position:absolute; bottom:115px; left:80px; width:20px; height:1px; background:rgba(200,200,255,.3);"></div>
+
+  <div class="outer-label" style="bottom:130px; right:-100px;">JUMP</div>
+  <div style="position:absolute; bottom:145px; right:80px; width:20px; height:1px; background:rgba(200,200,255,.3);"></div>
+
+  <div class="outer-label" style="bottom:52px; right:-90px;">Reset (R)</div>
+  <div style="position:absolute; bottom:65px; right:78px; width:12px; height:1px; background:rgba(200,200,255,.3);"></div>
+
+</div>
+
+</body>
+</html>

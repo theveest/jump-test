@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>JUMP (prototype)</title>
+
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/examples/jsm/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+    </script>
+
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #4a8fd4; }
+
+      /* ── HUD ── */
+      #hud {
+        position: fixed; top: 12px; left: 12px;
+        font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+        color: #e6edf3; background: rgba(0,0,0,.38);
+        padding: 10px 12px; border-radius: 10px; backdrop-filter: blur(6px);
+        max-width: 360px; user-select: none;
+      }
+      kbd {
+        background: #111827; padding: 2px 6px; border-radius: 6px;
+        border: 1px solid #30363d; margin-right: 2px;
+      }
+
+      /* ── Timer ── */
+      #timer {
+        position: fixed; top: 12px; right: 12px;
+        font: bold 22px/1 system-ui; font-variant-numeric: tabular-nums;
+        color: #fff; background: rgba(0,0,0,.38);
+        padding: 9px 16px; border-radius: 10px; backdrop-filter: blur(6px);
+        user-select: none; letter-spacing: .02em;
+      }
+
+      /* ── Shared overlay backdrop ── */
+      .overlay {
+        position: fixed; inset: 0;
+        display: none; align-items: center; justify-content: center;
+        background: rgba(0,0,0,.54);
+        backdrop-filter: blur(6px);
+        z-index: 20;
+      }
+      .overlay.active { display: flex; }
+
+      /* ── Modal card ── */
+      .modal-card {
+        background: rgba(8, 12, 26, .94);
+        border: 1px solid rgba(255,255,255,.13);
+        border-radius: 18px;
+        padding: 34px 44px;
+        color: #e6edf3;
+        font: 15px/1.6 system-ui;
+        min-width: 340px;
+        max-width: 420px;
+        text-align: center;
+        box-shadow: 0 12px 40px rgba(0,0,0,.55);
+      }
+      .modal-card h2 {
+        margin: 0 0 4px; font-size: 21px; font-weight: 700;
+      }
+      .time-display {
+        font-size: 32px; font-weight: 800; color: #FFD700;
+        margin: 6px 0 22px; font-variant-numeric: tabular-nums;
+        letter-spacing: .02em;
+      }
+
+      /* ── Name input ── */
+      #name-label { font-size: 13px; color: rgba(255,255,255,.55); }
+      #name-input {
+        display: block; width: 100%; box-sizing: border-box;
+        margin: 8px 0 14px;
+        padding: 10px 14px;
+        background: rgba(255,255,255,.07);
+        border: 1px solid rgba(255,255,255,.2);
+        border-radius: 9px; color: #fff; font-size: 16px;
+        outline: none; transition: border-color .15s;
+      }
+      #name-input:focus { border-color: rgba(255,215,0,.65); }
+      #name-submit {
+        padding: 10px 32px;
+        background: #FFD700; border: none; border-radius: 9px;
+        color: #111; font: 600 15px system-ui; cursor: pointer;
+        transition: background .12s;
+      }
+      #name-submit:hover { background: #ffe84d; }
+
+      /* ── Leaderboard table ── */
+      #lb-table {
+        width: 100%; border-collapse: collapse; margin: 14px 0 4px;
+      }
+      #lb-table th {
+        font-size: 11px; text-transform: uppercase; letter-spacing: .09em;
+        color: rgba(255,255,255,.4);
+        padding: 0 14px 8px;
+        border-bottom: 1px solid rgba(255,255,255,.1);
+      }
+      #lb-table td {
+        padding: 8px 14px; font-size: 15px; font-variant-numeric: tabular-nums;
+      }
+      #lb-table td:first-child { color: rgba(255,255,255,.35); font-size: 13px; }
+      .lb-mine td { color: #FFD700 !important; font-weight: 700; }
+      #lb-not-top { margin: 6px 0 0; font-size: 13px; color: rgba(255,255,255,.45); }
+      #lb-hint    { margin: 18px 0 0; font-size: 13px; color: rgba(255,255,255,.45); }
+
+      /* ── Countdown / Level title ── */
+      #countdown-overlay { flex-direction: column; text-align: center; }
+      #countdown-title {
+        font: 800 34px/1 system-ui; color: #FFD700;
+        letter-spacing: .12em; text-transform: uppercase;
+        margin-bottom: 6px; text-shadow: 0 2px 12px rgba(0,0,0,.5);
+      }
+      #countdown-subtitle {
+        font: 500 17px/1 system-ui; color: rgba(255,255,255,.75);
+        letter-spacing: .06em; text-transform: uppercase;
+        margin-bottom: 14px; text-shadow: 0 1px 8px rgba(0,0,0,.5);
+      }
+      #countdown-number {
+        font: 900 112px/1 system-ui; color: #fff;
+        text-shadow: 0 4px 28px rgba(255,255,255,.35);
+        min-width: 2ch; display: inline-block;
+      }
+
+      /* ── Progress bar + level name ── */
+      #progress-area {
+        position: fixed; bottom: 22px; left: 50%;
+        transform: translateX(-50%);
+        display: flex; flex-direction: column; align-items: center; gap: 6px;
+        user-select: none;
+      }
+      #level-name-hud {
+        font: 600 11px/1 system-ui; color: rgba(255,255,255,.60);
+        letter-spacing: .12em; text-transform: uppercase;
+        text-shadow: 0 1px 5px rgba(0,0,0,.9);
+      }
+      #progress-wrap {
+        width: min(300px, 60vw); height: 7px;
+        background: rgba(0,0,0,.30); border-radius: 4px;
+        overflow: hidden;
+      }
+      #progress-fill {
+        height: 100%; width: 0%;
+        background: #FFD700; border-radius: 4px;
+        box-shadow: 0 0 8px rgba(255,215,0,.55);
+        transition: none;
+      }
+      /* ── Mobile touch controls (touch/coarse-pointer devices only) ── */
+      #mobile-controls { display: none; }
+      @media (pointer: coarse) {
+        #mobile-controls {
+          display: block;
+          position: fixed; inset: 0;
+          pointer-events: none;
+          z-index: 10;
+        }
+        /* On mobile, push progress area up above the controls */
+        #progress-area { bottom: 190px; }
+      }
+
+      #dpad {
+        position: absolute;
+        bottom: 28px; left: 28px;
+        width: 154px; height: 154px;
+        pointer-events: none;
+      }
+      .dpad-btn {
+        position: absolute;
+        width: 52px; height: 52px;
+        background: rgba(255,255,255,.14);
+        border: 1px solid rgba(255,255,255,.28);
+        border-radius: 12px;
+        color: #fff; font-size: 20px; line-height: 1;
+        display: flex; align-items: center; justify-content: center;
+        pointer-events: all;
+        -webkit-tap-highlight-color: transparent;
+        user-select: none; touch-action: none;
+        cursor: pointer; transition: background .08s;
+      }
+      .dpad-btn:active { background: rgba(255,255,255,.34); }
+      #btn-up    { top: 0;    left: 51px; }
+      #btn-left  { top: 51px; left: 0;    }
+      #btn-right { top: 51px; left: 102px; }
+      #btn-down  { top: 102px; left: 51px; }
+
+      #right-controls {
+        position: absolute;
+        bottom: 28px; right: 28px;
+        display: flex; flex-direction: column;
+        align-items: center; gap: 14px;
+        pointer-events: none;
+      }
+      #btn-jump {
+        width: 88px; height: 88px; border-radius: 50%;
+        background: rgba(255,215,0,.20);
+        border: 2px solid rgba(255,215,0,.55);
+        color: #FFD700; font: 700 15px/1 system-ui;
+        letter-spacing: .06em;
+        pointer-events: all;
+        -webkit-tap-highlight-color: transparent;
+        user-select: none; touch-action: none;
+        cursor: pointer; transition: background .08s;
+      }
+      #btn-jump:active { background: rgba(255,215,0,.42); }
+      #btn-reset-mobile {
+        width: 50px; height: 50px; border-radius: 50%;
+        background: rgba(255,255,255,.12);
+        border: 1px solid rgba(255,255,255,.22);
+        color: rgba(255,255,255,.70); font: 600 15px/1 system-ui;
+        pointer-events: all;
+        -webkit-tap-highlight-color: transparent;
+        user-select: none; touch-action: none;
+        cursor: pointer; transition: background .08s;
+      }
+      #btn-reset-mobile:active { background: rgba(255,255,255,.28); }
+
+      /* ── Skin selector ── */
+      #skin-overlay { flex-direction: column; }
+      #skin-overlay .modal-card { max-width: 500px; }
+      #skin-overlay h2 { margin: 0 0 24px; font-size: 21px; font-weight: 700; letter-spacing: .04em; }
+      #skin-logo { display: block; width: 100%; max-width: 420px; margin: 0 auto 20px; }
+      .skin-swatches {
+        display: flex; gap: 12px; justify-content: center; margin-bottom: 26px;
+      }
+      .skin-swatch {
+        display: flex; flex-direction: column; align-items: center; gap: 8px;
+        cursor: pointer; padding: 10px 12px; border-radius: 14px;
+        border: 2px solid transparent;
+        transition: border-color .13s, background .13s;
+      }
+      .skin-swatch:hover { background: rgba(255,255,255,.08); }
+      .skin-swatch.selected {
+        border-color: rgba(255,255,255,.85);
+        background: rgba(255,255,255,.10);
+      }
+      .swatch-circle {
+        width: 54px; height: 54px; border-radius: 50%;
+        border: 2px solid rgba(255,255,255,.22);
+        box-shadow: 0 2px 10px rgba(0,0,0,.45);
+      }
+      .swatch-label {
+        font-size: 11px; font-weight: 600; letter-spacing: .08em;
+        color: rgba(255,255,255,.65); text-transform: uppercase;
+      }
+      #skin-play {
+        padding: 11px 44px;
+        background: #FFD700; border: none; border-radius: 9px;
+        color: #111; font: 600 15px system-ui; cursor: pointer;
+        transition: background .12s;
+      }
+      #skin-play:hover { background: #ffe84d; }
+    </style>
+  </head>
+  <body>
+
+    <!-- HUD -->
+    <div id="hud">
+      <div><strong>JUMP (prototype)</strong></div>
+      <div>
+        Move: ↑ ← ↓ → or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
+        &nbsp; Jump: <kbd>Space</kbd>
+        &nbsp; Reset: <kbd>R</kbd>
+      </div>
+    </div>
+
+    <!-- Timer -->
+    <div id="timer">0:00.0</div>
+
+    <!-- Name-entry overlay -->
+    <div class="overlay" id="name-overlay">
+      <div class="modal-card">
+        <h2 id="level-complete-msg">Level complete!</h2>
+        <div class="time-display" id="final-time-display">0:00.0</div>
+        <div id="name-label">Enter your name for the leaderboard</div>
+        <input id="name-input" type="text" maxlength="20"
+               placeholder="Your name" autocomplete="off" spellcheck="false" />
+        <button id="name-submit">Submit</button>
+      </div>
+    </div>
+
+    <!-- Leaderboard overlay -->
+    <div class="overlay" id="lb-overlay">
+      <div class="modal-card">
+        <h2 id="lb-title">Leaderboard</h2>
+        <table id="lb-table"></table>
+        <div id="lb-not-top"></div>
+        <div id="lb-hint"></div>
+      </div>
+    </div>
+
+    <!-- Skin selector overlay -->
+    <div class="overlay" id="skin-overlay">
+      <div class="modal-card">
+        <img id="skin-logo" src="jump_logo2.png" alt="JUMP!" />
+        <h2>CHOOSE YOUR VEHICLE COLOR</h2>
+        <div class="skin-swatches" id="skin-swatches">
+          <div class="skin-swatch" data-color="0xEE2222">
+            <div class="swatch-circle" style="background:#EE2222"></div>
+            <span class="swatch-label">Red</span>
+          </div>
+          <div class="skin-swatch" data-color="0x2255EE">
+            <div class="swatch-circle" style="background:#2255EE"></div>
+            <span class="swatch-label">Blue</span>
+          </div>
+          <div class="skin-swatch" data-color="0x22BB44">
+            <div class="swatch-circle" style="background:#22BB44"></div>
+            <span class="swatch-label">Green</span>
+          </div>
+          <div class="skin-swatch" data-color="0xEECC00">
+            <div class="swatch-circle" style="background:#EECC00"></div>
+            <span class="swatch-label">Yellow</span>
+          </div>
+          <div class="skin-swatch" data-color="0xFF44BB">
+            <div class="swatch-circle" style="background:#FF44BB"></div>
+            <span class="swatch-label">Pink</span>
+          </div>
+        </div>
+        <button id="skin-play">PLAY</button>
+      </div>
+    </div>
+
+    <!-- Countdown / Level title card -->
+    <div class="overlay" id="countdown-overlay">
+      <div id="countdown-title">LEVEL 1</div>
+      <div id="countdown-subtitle">Golden Hour</div>
+      <div id="countdown-number">3</div>
+    </div>
+
+    <!-- Progress bar + level name -->
+    <div id="progress-area">
+      <div id="level-name-hud">Golden Hour</div>
+      <div id="progress-wrap">
+        <div id="progress-fill"></div>
+      </div>
+    </div>
+
+    <!-- Mobile touch controls -->
+    <div id="mobile-controls">
+      <div id="dpad">
+        <button id="btn-up"    class="dpad-btn">▲</button>
+        <button id="btn-left"  class="dpad-btn">◀</button>
+        <button id="btn-right" class="dpad-btn">▶</button>
+        <button id="btn-down"  class="dpad-btn">▼</button>
+      </div>
+      <div id="right-controls">
+        <button id="btn-jump">JUMP</button>
+        <button id="btn-reset-mobile">R</button>
+      </div>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
