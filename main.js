@@ -3988,8 +3988,8 @@ function loadLevel(n) {
   else if (n === 1) buildLevel1();
   else if (n === 2) buildLevel2();
   else if (n === 3) buildLevel3();
-  else if (n === 4) buildLevel4();
-  else if (n === 5) buildLevel5();
+  else if (n === 4) buildLevel5();   // buildLevel5 has volcano platforms → "Volcanic Lava World"
+  else if (n === 5) buildLevel4();   // buildLevel4 has cave platforms   → "Underground Crystal Cave"
   else if (n === 6) buildLevel6();
   else if (n === 7) buildLevel7();
   else if (n === 8) buildLevel8();
@@ -4589,7 +4589,7 @@ function showLeaderboard(level, top5, myTime, myIdx) {
   }
   lbTable.innerHTML = rows + "</tbody>";
   lbNotTop.textContent = myIdx === -1 ? `Your time: ${formatTime(myTime)} — not in top 5` : "";
-  lbHint.textContent   = level < 3 ? `Press R for Level ${level + 1}` : "Press R to play again";
+  lbHint.textContent   = level < 9 ? `Press R for Level ${level + 1}` : "Press R to play again";
   lbOverlay.classList.add("active");
 }
 function showNameEntry(finalTime) {
@@ -5122,7 +5122,7 @@ function update(dt) {
     }
   }
 
-  // ── Geyser collision (Level 4) ──
+  // ── Geyser collision (Level 4 — Volcanic Lava World) ──
   if (currentLevel === 4 && !crashed) {
     for (const g of geysers) {
       if (!g.active) continue;
