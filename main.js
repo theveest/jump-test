@@ -1121,8 +1121,8 @@ function buildSpaceBackground() {
 }
 
 function clearSpaceBackground() {
-  if (starGroup)   { scene.remove(starGroup);   starGroup   = null; }
-  if (planetGroup) { scene.remove(planetGroup); planetGroup = null; }
+  if (starGroup)   { scene.remove(starGroup);   disposeTree(starGroup);   starGroup   = null; }
+  if (planetGroup) { scene.remove(planetGroup); disposeTree(planetGroup); planetGroup = null; }
 }
 
 // ===== Forest background (Level 2) =====
@@ -1264,7 +1264,7 @@ function buildForestBackground() {
 }
 
 function clearForestBackground() {
-  if (forestGroup) { scene.remove(forestGroup); forestGroup = null; }
+  if (forestGroup) { scene.remove(forestGroup); disposeTree(forestGroup); forestGroup = null; }
   birdData.length = 0;
 }
 
@@ -1373,7 +1373,7 @@ function buildCaveBackground() {
 }
 
 function clearCaveBackground() {
-  if (caveGroup) { scene.remove(caveGroup); caveGroup = null; }
+  if (caveGroup) { scene.remove(caveGroup); disposeTree(caveGroup); caveGroup = null; }
   caveDropData = [];
   caveDropGeo  = null;
 }
@@ -1460,31 +1460,31 @@ function buildVolcanoBackground() {
 }
 
 function clearVolcanoBackground() {
-  if (volcanoGroup) { scene.remove(volcanoGroup); volcanoGroup = null; }
+  if (volcanoGroup) { scene.remove(volcanoGroup); disposeTree(volcanoGroup); volcanoGroup = null; }
   lavaGlowMesh = null;
   emberData    = [];
   emberGeo     = null;
 }
 
 function clearCandyBackground() {
-  if (candyGroup) { scene.remove(candyGroup); candyGroup = null; }
+  if (candyGroup) { scene.remove(candyGroup); disposeTree(candyGroup); candyGroup = null; }
 }
 
 function clearParkBackground() {
-  if (parkGroup) { scene.remove(parkGroup); parkGroup = null; }
+  if (parkGroup) { scene.remove(parkGroup); disposeTree(parkGroup); parkGroup = null; }
 }
 
 function clearCityBackground() {
-  if (cityGroup) { scene.remove(cityGroup); cityGroup = null; }
-  if (rainMesh)  { scene.remove(rainMesh);  rainMesh = null; rainPositions = null; }
+  if (cityGroup) { scene.remove(cityGroup); disposeTree(cityGroup); cityGroup = null; }
+  if (rainMesh)  { scene.remove(rainMesh);  disposeTree(rainMesh);  rainMesh = null; rainPositions = null; }
   droneData = [];
   windActive = false; windForceX = 0; windTimer = 0; windGustDur = 0; nextGust = 5.0;
   carData = [];
 }
 
 function clearIceBackground() {
-  if (iceGroup)  { scene.remove(iceGroup);  iceGroup  = null; }
-  if (snowMesh)  { scene.remove(snowMesh);  snowMesh  = null; snowPositions = null; snowData = []; }
+  if (iceGroup)  { scene.remove(iceGroup);  disposeTree(iceGroup);  iceGroup  = null; }
+  if (snowMesh)  { scene.remove(snowMesh);  disposeTree(snowMesh);  snowMesh  = null; snowPositions = null; snowData = []; }
   auroraMats     = [];
   iceBgCloudMat  = null;
   iceBgCloudMat2 = null;
@@ -1492,9 +1492,9 @@ function clearIceBackground() {
 }
 
 function clearStormBackground() {
-  if (stormGroup)      { scene.remove(stormGroup);      stormGroup      = null; }
-  if (stormRainMesh)   { scene.remove(stormRainMesh);   stormRainMesh   = null; stormRainData = []; }
-  if (stormWindStreaks) { scene.remove(stormWindStreaks); stormWindStreaks = null; stormWindData = []; }
+  if (stormGroup)      { scene.remove(stormGroup);      disposeTree(stormGroup);      stormGroup      = null; }
+  if (stormRainMesh)   { scene.remove(stormRainMesh);   disposeTree(stormRainMesh);   stormRainMesh   = null; stormRainData = []; }
+  if (stormWindStreaks) { scene.remove(stormWindStreaks); disposeTree(stormWindStreaks); stormWindStreaks = null; stormWindData = []; }
   if (stormFlashLight) { scene.remove(stormFlashLight);  stormFlashLight = null; }
   for (const lb of stormLightning) {
     scene.remove(lb.mesh);
@@ -1832,8 +1832,12 @@ function disposeTree(obj) {
   obj.traverse(child => {
     if (child.geometry) child.geometry.dispose();
     if (child.material) {
-      if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
-      else child.material.dispose();
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      for (const m of mats) {
+        if (m.map)         m.map.dispose();
+        if (m.emissiveMap) m.emissiveMap.dispose();
+        m.dispose();
+      }
     }
   });
 }
@@ -1930,7 +1934,7 @@ function bouncePad({ x, y, z, w = 4, d = 4, bounceSpeed = 20 }) {
   // Collision box — top at y + 0.3, matches visual launch surface
   const col = new THREE.Mesh(
     new THREE.BoxGeometry(w, h, d),
-    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 })
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
   );
   col.position.set(x, y, z);
   scene.add(col);
@@ -2021,7 +2025,7 @@ function gumDropPad({ x, y, z, w = 3, d = 3, bounceSpeed = 20, color = 0xFF2233 
   // Invisible collision box — top surface at y + 0.3
   const col = new THREE.Mesh(
     new THREE.BoxGeometry(w, h, d),
-    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 })
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
   );
   col.position.set(x, y, z);
   scene.add(col);
@@ -4774,7 +4778,7 @@ function reset() {
   player.visible = true;
   player.rotation.set(0, 0, 0);
   player.traverse(obj => {
-    if (obj.isMesh && obj.material) obj.material.opacity = 1.0;
+    if (obj.isMesh && obj.material) { obj.material.opacity = 1.0; obj.material.transparent = false; }
   });
   crashed         = false;
   crashTimer      = 0;
