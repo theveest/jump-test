@@ -1822,17 +1822,27 @@ function updateGeysers() {
 }
 
 // ===== Level definitions =====
+function disposeTree(obj) {
+  obj.traverse(child => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) {
+      if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+      else child.material.dispose();
+    }
+  });
+}
+
 function clearLevel() {
   clearGeysers();
   clearIceBackground();
-  for (const p of solids)    scene.remove(p.mesh);
-  for (const m of movers)    scene.remove(m.mesh);
-  for (const r of ramps)     scene.remove(r.mesh);
-  for (const p of pendulums)   scene.remove(p.group);
-  for (const d of decorations) scene.remove(d);
+  for (const p of solids)      { scene.remove(p.mesh);  disposeTree(p.mesh);  }
+  for (const m of movers)      { scene.remove(m.mesh);  disposeTree(m.mesh);  }
+  for (const r of ramps)       { scene.remove(r.mesh);  disposeTree(r.mesh);  }
+  for (const p of pendulums)   { scene.remove(p.group); disposeTree(p.group); }
+  for (const d of decorations) { scene.remove(d);       disposeTree(d);       }
   solids.length = 0; movers.length = 0; ramps.length = 0; pendulums.length = 0; decorations.length = 0;
-  if (ring)  { scene.remove(ring);  ring  = null; }
-  if (burst) { scene.remove(burst.mesh); burst = null; }
+  if (ring)  { scene.remove(ring);  disposeTree(ring); ring  = null; }
+  if (burst) { scene.remove(burst.mesh); burst.geo.dispose(); burst.mat.dispose(); burst = null; }
 }
 
 // ===== Saw blade pendulum (Level 2) =====
@@ -4305,8 +4315,14 @@ function triggerShake(mag) {
 let squashY   = 1;
 let squashXZ  = 1;
 
+// ===== Burst cleanup helper =====
+function cleanupBurst() {
+  if (burst) { scene.remove(burst.mesh); burst.geo.dispose(); burst.mat.dispose(); burst = null; }
+}
+
 // ===== Ring burst particles =====
 function spawnRingBurst(pos) {
+  cleanupBurst();
   const N       = 36;
   const pos3    = new Float32Array(N * 3);
   const col3    = new Float32Array(N * 3);
@@ -4347,7 +4363,7 @@ function spawnRingBurst(pos) {
 function updateBurst(dt) {
   if (!burst) return;
   burst.age += dt;
-  if (burst.age > 1.6) { scene.remove(burst.mesh); burst = null; return; }
+  if (burst.age > 1.6) { cleanupBurst(); return; }
   const pos3 = burst.geo.attributes.position.array;
   for (let i = 0; i < burst.vels.length; i++) {
     pos3[i * 3]     += burst.vels[i].x * dt;
@@ -4364,6 +4380,7 @@ let crashed    = false;
 let crashTimer = 0;
 
 function spawnCrashBurst(pos) {
+  cleanupBurst();
   const N    = 40;
   const pos3 = new Float32Array(N * 3);
   const col3 = new Float32Array(N * 3);
@@ -4401,6 +4418,7 @@ function spawnCrashBurst(pos) {
 }
 
 function spawnIceBurst(pos) {
+  cleanupBurst();
   const N    = 40;
   const pos3 = new Float32Array(N * 3);
   const col3 = new Float32Array(N * 3);
@@ -4448,6 +4466,7 @@ function triggerCrash(floorY = -22) {
 }
 
 function spawnFireBurst(pos) {
+  cleanupBurst();
   const N      = 52;
   const pos3   = new Float32Array(N * 3);
   const col3   = new Float32Array(N * 3);
@@ -4674,6 +4693,16 @@ let grounded     = false;
 let groundObject = null;
 const playerHalf = new THREE.Vector3(0.65, 0.95, 0.65);
 
+// Pre-allocated temporaries to avoid per-frame heap allocations
+const _tmpHalf   = new THREE.Vector3();
+const _tmpPush   = new THREE.Vector3();
+const _tmpBehind = new THREE.Vector3();
+const _tmpCamPos = new THREE.Vector3();
+const _tmpLookAt = new THREE.Vector3();
+const _tmpRampP  = new THREE.Vector3();
+const _tmpRampInv = new THREE.Matrix4();
+const _tmpRingHalf = new THREE.Vector3(1.3, 1.3, 1.3);
+
 function aabbOverlap(aPos, aHalf, bPos, bHalf) {
   return (
     Math.abs(aPos.x - bPos.x) <= (aHalf.x + bHalf.x) &&
@@ -4684,7 +4713,7 @@ function aabbOverlap(aPos, aHalf, bPos, bHalf) {
 
 function resolveSideXZ(p, padding = 0.02) {
   if (p.stormType === "phase" && !p.phaseVisible) return; // invisible phase platform
-  const pHalf = new THREE.Vector3(p.w / 2, p.h / 2, p.d / 2);
+  const pHalf = _tmpHalf.set(p.w / 2, p.h / 2, p.d / 2);
   if (!aabbOverlap(player.position, playerHalf, p.mesh.position, pHalf)) return;
   const platformTop  = p.mesh.position.y + pHalf.y;
   const playerBottom = player.position.y - playerHalf.y;
@@ -4698,8 +4727,8 @@ function resolveSideXZ(p, padding = 0.02) {
 }
 
 function rampHeightAt(ramp, x, z) {
-  const pWorld = new THREE.Vector3(x, 0, z);
-  const inv    = ramp.mesh.matrixWorld.clone().invert();
+  const pWorld = _tmpRampP.set(x, 0, z);
+  const inv    = _tmpRampInv.copy(ramp.mesh.matrixWorld).invert();
   const pLocal = pWorld.applyMatrix4(inv);
   if (Math.abs(pLocal.x) > ramp.w / 2) return null;
   if (Math.abs(pLocal.z) > ramp.d / 2) return null;
@@ -4751,6 +4780,14 @@ function reset() {
     p.falling       = false;
     p.fallVel       = 0;
     p.mesh.position.set(p.baseX, p.baseY, p.baseZ);
+  }
+
+  // Restore phase platforms to visible state (Level 9)
+  for (const pp of stormPhasePlats) {
+    pp.phaseVisible = true;
+    pp.phaseTimer   = Math.random() * 3; // stagger like initial spawn
+    pp.mesh.visible = true;
+    for (const m of pp.allMats) m.opacity = m._baseOpacity;
   }
 }
 
@@ -5011,7 +5048,7 @@ function update(dt) {
   const allBoxes = solids.concat(movers);
   for (const p of allBoxes) {
     if (p.stormType === "phase" && !p.phaseVisible) continue; // invisible phase platform
-    const pHalf = new THREE.Vector3(p.w / 2, p.h / 2, p.d / 2);
+    const pHalf = _tmpHalf.set(p.w / 2, p.h / 2, p.d / 2);
     if (!aabbOverlap(player.position, playerHalf, p.mesh.position, pHalf)) continue;
     const playerBottom = player.position.y - playerHalf.y;
     const platformTop  = p.mesh.position.y + pHalf.y;
@@ -5108,12 +5145,12 @@ function update(dt) {
 
   // ── Pendulum collision ──
   for (const p of pendulums) {
-    const pHalf = new THREE.Vector3(p.boxW / 2, p.boxH / 2, p.boxD / 2);
+    const pHalf = _tmpHalf.set(p.boxW / 2, p.boxH / 2, p.boxD / 2);
     if (aabbOverlap(player.position, playerHalf, p.worldPos, pHalf)) {
       if (p.saw && currentLevel === 2) {
         triggerCrash();               // saw blade on level 2 = instant kill
       } else {
-        const pushDir = new THREE.Vector3().subVectors(player.position, p.worldPos).normalize();
+        const pushDir = _tmpPush.subVectors(player.position, p.worldPos).normalize();
         vel.x += pushDir.x * 14;
         vel.z += pushDir.z * 14;
         grounded = false;
@@ -5148,6 +5185,9 @@ function update(dt) {
   if (currentLevel === 0 && !crashed && player.position.y - playerHalf.y <= -8) {
     triggerCrash(-8);
   }
+  if (currentLevel === 1 && !crashed && player.position.y - playerHalf.y <= -8) {
+    triggerCrash(-8);
+  }
   if (currentLevel === 6 && !crashed && player.position.y - playerHalf.y <= -14) {
     triggerCrash(-14);
   }
@@ -5167,7 +5207,7 @@ function update(dt) {
 
   // ── Win check ──
   if (ring) {
-    const ringHalf = new THREE.Vector3(1.3, 1.3, 1.3);
+    const ringHalf = _tmpRingHalf;
     if (aabbOverlap(player.position, playerHalf, ring.position, ringHalf)) {
       won = true;
       vel.set(0, 0, 0);
@@ -5194,9 +5234,9 @@ function update(dt) {
   player.rotation.y = yaw;
 
   // ── Chase camera + screen shake ──
-  const behind     = facing.clone().multiplyScalar(camOffsetDist);
-  const desiredCam = player.position.clone().add(new THREE.Vector3(behind.x, camHeight, behind.z));
-  camera.position.lerp(desiredCam, 1 - Math.pow(0.0007, dt));
+  _tmpBehind.copy(facing).multiplyScalar(camOffsetDist);
+  _tmpCamPos.set(player.position.x + _tmpBehind.x, player.position.y + camHeight, player.position.z + _tmpBehind.z);
+  camera.position.lerp(_tmpCamPos, 1 - Math.pow(0.0007, dt));
 
   if (shakeIntensity > 0.005) {
     camera.position.x += (Math.random() - 0.5) * shakeIntensity * 2;
@@ -5205,7 +5245,7 @@ function update(dt) {
     shakeIntensity    *= Math.pow(0.0001, dt);  // fast exponential decay (~250ms)
   }
 
-  camera.lookAt(player.position.clone().add(new THREE.Vector3(0, 1.2, 0)));
+  camera.lookAt(_tmpLookAt.set(player.position.x, player.position.y + 1.2, player.position.z));
 }
 
 // ===== Ice update (Level 8) =====
