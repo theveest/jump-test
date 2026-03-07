@@ -110,8 +110,7 @@ let iceBgCloudMat3 = null; // cloud floor layer 3
 let iceFillLight   = null; // Level 8 fill PointLight — added/removed per level switch
 let auroraMats     = [];   // { mat, speed } — animated each frame in updateIce
 let snowMesh       = null;
-let iceFogPlane1   = null;  // atmospheric fog layer at y=-16
-let iceFogPlane2   = null;  // atmospheric fog layer at y=-20
+let iceFogLayers   = [];    // rolling cloud sea [{mesh, mat, baseX, baseZ, oscSpeed, uvSpeed}]
 let snowPositions = null;   // kept for compat; not used by instanced system
 const SNOW_COUNT = 400;
 let snowData     = [];      // per-flake state for InstancedMesh
@@ -1454,8 +1453,7 @@ function clearIceBackground() {
   iceBgCloudMat  = null;
   iceBgCloudMat2 = null;
   iceBgCloudMat3 = null;
-  iceFogPlane1   = null;
-  iceFogPlane2   = null;
+  iceFogLayers   = [];
 }
 
 function clearStormBackground() {
@@ -3703,57 +3701,75 @@ function buildIceBackground() {
   snowMesh.instanceMatrix.needsUpdate = true;
   scene.add(snowMesh);
 
-  // Cloud floor — 3 layered planes at different depths for cloud ocean feel
-  function makeCloudLayer(blobCount, blobMaxR, opacity, yPos, planeW, planeD, repeatX, repeatY) {
+  // ── Rolling cloud sea — layered textured planes with vertex displacement ──
+  // Mountain bases at y=-12, platforms at y=0..7.
+  // 3 cloud layers at y=-6/-9/-11 create rolling cloud banks mountains emerge through.
+  function makeRollingCloud(cfg) {
+    const { blobCount, blobMaxR, colorHex, opacity, yPos, size, segs, waveAmp, seed, repeatS } = cfg;
+    let _cs = seed;
+    function cr() { _cs = (_cs * 16807) % 2147483647; return (_cs - 1) / 2147483646; }
+
     const cc = document.createElement("canvas"); cc.width = 512; cc.height = 512;
     const cctx = cc.getContext("2d");
     for (let i = 0; i < blobCount; i++) {
-      const cx2 = rng() * 512, cy2 = rng() * 512;
-      const r2  = (blobMaxR * 0.3) + rng() * (blobMaxR * 0.7);
-      const g2  = cctx.createRadialGradient(cx2, cy2, 0, cx2, cy2, r2);
-      g2.addColorStop(0, "rgba(255,255,255,0.65)");
-      g2.addColorStop(1, "rgba(255,255,255,0)");
-      cctx.fillStyle = g2; cctx.fillRect(cx2 - r2, cy2 - r2, r2 * 2, r2 * 2);
+      const bx = cr() * 512, by = cr() * 512;
+      const br = (blobMaxR * 0.35) + cr() * (blobMaxR * 0.65);
+      const grad = cctx.createRadialGradient(bx, by, 0, bx, by, br);
+      grad.addColorStop(0,   "rgba(255,255,255,0.6)");
+      grad.addColorStop(0.4, "rgba(255,255,255,0.3)");
+      grad.addColorStop(1,   "rgba(255,255,255,0)");
+      cctx.fillStyle = grad;
+      cctx.fillRect(bx - br, by - br, br * 2, br * 2);
     }
     const tex = new THREE.CanvasTexture(cc);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(repeatX, repeatY);
+    tex.repeat.set(repeatS, repeatS);
+
     const mat = new THREE.MeshBasicMaterial({
-      map: tex, transparent: true, opacity, depthWrite: false, fog: true
+      map: tex, color: colorHex, transparent: true, opacity,
+      depthWrite: false, side: THREE.DoubleSide, fog: false
     });
-    const plane = new THREE.Mesh(new THREE.PlaneGeometry(planeW, planeD), mat);
-    plane.rotation.x = -Math.PI / 2;
-    plane.position.set(0, yPos, -90);
-    iceGroup.add(plane);
-    return mat;
+
+    const geo = new THREE.PlaneGeometry(size, size, segs, segs);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const lx = pos.getX(i), ly = pos.getY(i);
+      const d = Math.sin(lx * 0.014 + seed * 2.7) * Math.cos(ly * 0.011 + seed * 1.3) * waveAmp
+              + Math.sin(lx * 0.027 + ly * 0.019 + seed * 4.1) * waveAmp * 0.35
+              + (cr() - 0.5) * waveAmp * 0.12;
+      pos.setZ(i, d);
+    }
+    geo.computeVertexNormals();
+
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(0, yPos, -90);
+    mesh.renderOrder = 1;
+    iceGroup.add(mesh);
+    return { mesh, mat };
   }
-  // Layer 1: primary, sparser large blobs, scrolls fastest
-  iceBgCloudMat  = makeCloudLayer(48, 125, 0.20, -14, 700, 500, 5, 4);
-  // Layer 2: mid depth, larger sparse blobs
-  iceBgCloudMat2 = makeCloudLayer(32, 160, 0.12, -22, 800, 550, 4, 3);
-  // Layer 3: deepest, dense small blobs, slowest scroll
-  iceBgCloudMat3 = makeCloudLayer(64,  70, 0.07, -30, 900, 600, 7, 5);
 
-  // ── Atmospheric fog planes — large translucent sheets below platforms ──
-  const fogGeo = new THREE.PlaneGeometry(1000, 1000);
+  // Top layers raised closer to platform level (y=0) so they're visible from the
+  // forward chase camera at y=6.  Gaps between platforms reveal the cloud bank.
+  const fog1 = makeRollingCloud({ blobCount: 40, blobMaxR: 160, colorHex: 0xe6f4ff,
+    opacity: 0.25, yPos: -3,  size: 900, segs: 40, waveAmp: 2.5, seed: 7717, repeatS: 3 });
+  const fog2 = makeRollingCloud({ blobCount: 55, blobMaxR: 130, colorHex: 0xd9efff,
+    opacity: 0.20, yPos: -6,  size: 950, segs: 36, waveAmp: 2.0, seed: 3391, repeatS: 4 });
+  const fog3 = makeRollingCloud({ blobCount: 70, blobMaxR: 100, colorHex: 0xcbe7ff,
+    opacity: 0.14, yPos: -9,  size: 1000, segs: 32, waveAmp: 1.5, seed: 5503, repeatS: 5 });
+  // Deep layers — fill the void below the main cloud bank
+  const fog4 = makeRollingCloud({ blobCount: 50, blobMaxR: 140, colorHex: 0xc4dff0,
+    opacity: 0.10, yPos: -14, size: 1100, segs: 28, waveAmp: 1.2, seed: 4219, repeatS: 4 });
+  const fog5 = makeRollingCloud({ blobCount: 60, blobMaxR: 110, colorHex: 0xbdd8eb,
+    opacity: 0.07, yPos: -20, size: 1200, segs: 24, waveAmp: 1.0, seed: 6637, repeatS: 5 });
 
-  const fogMat1 = new THREE.MeshBasicMaterial({
-    color: 0xd9efff, transparent: true, opacity: 0.14,
-    depthWrite: false, side: THREE.DoubleSide, fog: false
-  });
-  iceFogPlane1 = new THREE.Mesh(fogGeo, fogMat1);
-  iceFogPlane1.rotation.x = -Math.PI / 2;
-  iceFogPlane1.position.set(0, -16, -90);
-  iceGroup.add(iceFogPlane1);
-
-  const fogMat2 = new THREE.MeshBasicMaterial({
-    color: 0xcbe7ff, transparent: true, opacity: 0.10,
-    depthWrite: false, side: THREE.DoubleSide, fog: false
-  });
-  iceFogPlane2 = new THREE.Mesh(fogGeo, fogMat2);
-  iceFogPlane2.rotation.x = -Math.PI / 2;
-  iceFogPlane2.position.set(0, -20, -90);
-  iceGroup.add(iceFogPlane2);
+  iceFogLayers = [
+    { ...fog1, baseX: 0, baseZ: -90, oscSpeed: 0.08, uvSpeed: 0.003 },
+    { ...fog2, baseX: 0, baseZ: -90, oscSpeed: 0.05, uvSpeed: 0.002 },
+    { ...fog3, baseX: 0, baseZ: -90, oscSpeed: 0.03, uvSpeed: 0.0012 },
+    { ...fog4, baseX: 0, baseZ: -90, oscSpeed: 0.022, uvSpeed: 0.0008 },
+    { ...fog5, baseX: 0, baseZ: -90, oscSpeed: 0.015, uvSpeed: 0.0005 },
+  ];
 }
 
 // ===== Ice crystal cluster spawner (Level 8 only) =====
@@ -5270,14 +5286,12 @@ function updateIce(dt) {
     if (am.mat.map) am.mat.map.offset.x -= am.speed * dt;
   }
 
-  // ── Scroll cloud floor layers westward at different rates ──
-  if (iceBgCloudMat  && iceBgCloudMat.map)  iceBgCloudMat.map.offset.x  -= 0.0040 * dt;
-  if (iceBgCloudMat2 && iceBgCloudMat2.map) iceBgCloudMat2.map.offset.x -= 0.0026 * dt;
-  if (iceBgCloudMat3 && iceBgCloudMat3.map) iceBgCloudMat3.map.offset.x -= 0.0015 * dt;
-
-  // ── Drift atmospheric fog planes in world space ──
-  if (iceFogPlane1) { iceFogPlane1.position.x += 0.35 * dt; iceFogPlane1.position.z += 0.25 * dt; }
-  if (iceFogPlane2) { iceFogPlane2.position.x -= 0.25 * dt; iceFogPlane2.position.z += 0.15 * dt; }
+  // ── Drift rolling cloud sea layers (UV scroll + gentle position oscillation) ──
+  for (const layer of iceFogLayers) {
+    if (layer.mat.map) layer.mat.map.offset.x -= layer.uvSpeed * dt;
+    layer.mesh.position.x = layer.baseX + Math.sin(time * layer.oscSpeed) * 5;
+    layer.mesh.position.z = layer.baseZ + Math.cos(time * layer.oscSpeed * 0.7) * 3;
+  }
 
   if (!snowMesh || !snowData.length) return;
   const pz = player.position.z;
