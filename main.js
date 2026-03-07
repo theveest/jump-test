@@ -4691,6 +4691,8 @@ addEventListener("keydown", (e) => {
   if (lvl < 0) return;
   nameOverlay.classList.remove("active");
   lbOverlay.classList.remove("active");
+  countdownOverlay.classList.remove("active");
+  countdownActive = false;
   won = false;
   loadLevel(lvl);
   reset();
