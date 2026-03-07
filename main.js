@@ -110,6 +110,8 @@ let iceBgCloudMat3 = null; // cloud floor layer 3
 let iceFillLight   = null; // Level 8 fill PointLight — added/removed per level switch
 let auroraMats     = [];   // { mat, speed } — animated each frame in updateIce
 let snowMesh       = null;
+let iceFogPlane1   = null;  // atmospheric fog layer at y=-16
+let iceFogPlane2   = null;  // atmospheric fog layer at y=-20
 let snowPositions = null;   // kept for compat; not used by instanced system
 const SNOW_COUNT = 400;
 let snowData     = [];      // per-flake state for InstancedMesh
@@ -1452,6 +1454,8 @@ function clearIceBackground() {
   iceBgCloudMat  = null;
   iceBgCloudMat2 = null;
   iceBgCloudMat3 = null;
+  iceFogPlane1   = null;
+  iceFogPlane2   = null;
 }
 
 function clearStormBackground() {
@@ -3729,6 +3733,27 @@ function buildIceBackground() {
   iceBgCloudMat2 = makeCloudLayer(32, 160, 0.12, -22, 800, 550, 4, 3);
   // Layer 3: deepest, dense small blobs, slowest scroll
   iceBgCloudMat3 = makeCloudLayer(64,  70, 0.07, -30, 900, 600, 7, 5);
+
+  // ── Atmospheric fog planes — large translucent sheets below platforms ──
+  const fogGeo = new THREE.PlaneGeometry(1000, 1000);
+
+  const fogMat1 = new THREE.MeshBasicMaterial({
+    color: 0xd9efff, transparent: true, opacity: 0.14,
+    depthWrite: false, side: THREE.DoubleSide, fog: false
+  });
+  iceFogPlane1 = new THREE.Mesh(fogGeo, fogMat1);
+  iceFogPlane1.rotation.x = -Math.PI / 2;
+  iceFogPlane1.position.set(0, -16, -90);
+  iceGroup.add(iceFogPlane1);
+
+  const fogMat2 = new THREE.MeshBasicMaterial({
+    color: 0xcbe7ff, transparent: true, opacity: 0.10,
+    depthWrite: false, side: THREE.DoubleSide, fog: false
+  });
+  iceFogPlane2 = new THREE.Mesh(fogGeo, fogMat2);
+  iceFogPlane2.rotation.x = -Math.PI / 2;
+  iceFogPlane2.position.set(0, -20, -90);
+  iceGroup.add(iceFogPlane2);
 }
 
 // ===== Ice crystal cluster spawner (Level 8 only) =====
@@ -5249,6 +5274,10 @@ function updateIce(dt) {
   if (iceBgCloudMat  && iceBgCloudMat.map)  iceBgCloudMat.map.offset.x  -= 0.0040 * dt;
   if (iceBgCloudMat2 && iceBgCloudMat2.map) iceBgCloudMat2.map.offset.x -= 0.0026 * dt;
   if (iceBgCloudMat3 && iceBgCloudMat3.map) iceBgCloudMat3.map.offset.x -= 0.0015 * dt;
+
+  // ── Drift atmospheric fog planes in world space ──
+  if (iceFogPlane1) { iceFogPlane1.position.x += 0.35 * dt; iceFogPlane1.position.z += 0.25 * dt; }
+  if (iceFogPlane2) { iceFogPlane2.position.x -= 0.25 * dt; iceFogPlane2.position.z += 0.15 * dt; }
 
   if (!snowMesh || !snowData.length) return;
   const pz = player.position.z;
