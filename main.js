@@ -348,28 +348,54 @@ function buildPhasePlatformVisual(w, h, d) {
 function buildSlipperyIceVisual(w, h, d) {
   const g = new THREE.Group();
   const vh = h * 2.5;
-  const r = Math.min(w, vh, d) * 0.5;
-  const geo = new RoundedBoxGeometry(w, vh, d, 5, r);
-  // Polished ice: brighter frost top to cooler ice blue bottom, tighter shading for gloss
+  // Seeded random per-platform so each glacier looks different
+  const seed = (w * 7.31 + d * 13.17 + vh * 3.79) % 1.0;
+  const rand = (() => { let s = seed * 2147483647 || 1; return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }; })();
+
+  // Irregular glacier geometry: start from a box, distort vertices
+  const geo = new THREE.BoxGeometry(w, vh, d, 4, 3, 4);
   const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i);
+    const nyNorm = (y / (vh * 0.5) + 1.0) * 0.5;  // 0=bottom, 1=top
+    // Top surface: minimal distortion (playable); sides/bottom: more jagged
+    const topDamp = Math.pow(1.0 - nyNorm, 0.5);  // 0 at top, 1 at bottom
+    const xJitter = (rand() - 0.5) * 0.30 * (0.15 + 0.85 * topDamp);
+    const yJitter = (rand() - 0.5) * 0.16 * topDamp;
+    const zJitter = (rand() - 0.5) * 0.30 * (0.15 + 0.85 * topDamp);
+    pos.setXYZ(i, pos.getX(i) + xJitter, y + yJitter, pos.getZ(i) + zJitter);
+  }
+  geo.computeVertexNormals();
+
+  // Ice depth gradient: frosty white top → medium blue sides → deeper blue underside
   const nrm = geo.attributes.normal;
   const colors = new Float32Array(pos.count * 3);
-  const topC    = new THREE.Color(0xe8f6ff);
-  const bottomC = new THREE.Color(0x88c8e0);
+  const topC    = new THREE.Color(0xeaf9ff);
+  const midC    = new THREE.Color(0x9ed6ff);
+  const bottomC = new THREE.Color(0x6bbcff);
   const tmp     = new THREE.Color();
+  const boost   = 2.8;
   for (let i = 0; i < pos.count; i++) {
-    const ny = (pos.getY(i) / (vh * 0.5) + 1.0) * 0.5;
-    const t = Math.pow(ny, 0.7);
-    tmp.copy(bottomC).lerp(topC, t);
-    // Tighter shading range for glossy feel: sides still bright; boost for tone mapping
-    const shade = (0.80 + 0.20 * Math.max(0, nrm.getY(i))) * 2.8;
+    const nyNorm = (pos.getY(i) / (vh * 0.5) + 1.0) * 0.5;
+    // Two-stop gradient: bottom→mid at ny<0.5, mid→top at ny>=0.5
+    if (nyNorm < 0.5) {
+      const t = nyNorm * 2.0;
+      tmp.copy(bottomC).lerp(midC, t);
+    } else {
+      const t = (nyNorm - 0.5) * 2.0;
+      tmp.copy(midC).lerp(topC, t);
+    }
+    const shade = (0.70 + 0.30 * Math.max(0, nrm.getY(i))) * boost;
     tmp.r *= shade;  tmp.g *= shade;  tmp.b *= shade;
     colors[i * 3] = tmp.r;  colors[i * 3 + 1] = tmp.g;  colors[i * 3 + 2] = tmp.b;
   }
   geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
   const topMat = new THREE.MeshBasicMaterial({ vertexColors: true });
   const body = new THREE.Mesh(geo, topMat);
   body.position.y = -(vh - h) * 0.5;
+  // Small random rotation for variation
+  body.rotation.y = (rand() - 0.5) * 0.08;
   g.add(body);
   return { group: g, topMat };
 }
