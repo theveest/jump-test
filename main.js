@@ -140,9 +140,13 @@ let stormElecPlats   = [];
 let stormWindStreaks  = null;
 let stormWindData    = [];
 let stormBoltTimer   = 3.0;
-let stormCloudPlanes = [];
-const STORM_RAIN_COUNT  = 300;
-const STORM_WIND_COUNT  = 60;
+let stormCloudPlanes   = [];   // rolling storm cloud layers [{mesh,mat,baseX,baseZ,oscSpeed,uvSpeed}]
+let stormFogLayers     = [];   // rolling fog floor layers
+let stormCeilingLayers = [];   // overhead cloud ceiling layers
+let stormWallClouds    = [];   // distant storm wall masses
+let stormBaseBackground = null; // scene.background clone for flash lerp
+const STORM_RAIN_COUNT  = 800;
+const STORM_WIND_COUNT  = 100;
 const stormRainDummy = new THREE.Object3D();
 
 // Per-level platform material personality — set in loadLevel before building
@@ -250,7 +254,7 @@ function buildNeonVisual(w, h, d, color) {
 function stormEdgeGlow(w, h, d) {
   return new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d)),
-    new THREE.LineBasicMaterial({ color: 0x66ccff, transparent: true, opacity: 0.75, depthWrite: false })
+    new THREE.LineBasicMaterial({ color: 0x5fd0ff, transparent: true, opacity: 0.80, depthWrite: false })
   );
 }
 
@@ -263,7 +267,7 @@ function buildStormPlatformVisual(w, h, d, emissive, accent, platType = "standar
 function buildStormBaseVisual(w, h, d) {
   const g = new THREE.Group();
   const baseMat = new THREE.MeshStandardMaterial({
-    color: 0x2a3444, emissive: 0x334466, emissiveIntensity: 0.6,
+    color: 0x2a3444, emissive: 0x3a5070, emissiveIntensity: 0.7,
     roughness: 0.65, metalness: 0.30, flatShading: true
   });
   const base = new THREE.Mesh(new RoundedBoxGeometry(w, h * 0.92, d, 2, 0.08), baseMat);
@@ -275,7 +279,7 @@ function buildStormBaseVisual(w, h, d) {
   // Cap slab — lighter steel top with visible glow
   const capH = Math.max(0.08, h * 0.14);
   const topMat = new THREE.MeshStandardMaterial({
-    color: 0x3a4a5e, emissive: 0x446688, emissiveIntensity: 0.4,
+    color: 0x3a4a5e, emissive: 0x506888, emissiveIntensity: 0.5,
     roughness: 0.50, metalness: 0.25
   });
   const cap = new THREE.Mesh(new THREE.BoxGeometry(w * 0.96, capH, d * 0.96), topMat);
@@ -296,14 +300,14 @@ function buildElectricPlatformVisual(w, h, d) {
   // Bright electric edge glow
   const glow = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h * 0.92, d)),
-    new THREE.LineBasicMaterial({ color: 0x66ccff, transparent: true, opacity: 0.85, depthWrite: false })
+    new THREE.LineBasicMaterial({ color: 0x5fd0ff, transparent: true, opacity: 0.85, depthWrite: false })
   );
   glow.position.y = base.position.y;
   g.add(glow);
   // Electric top plate — strong cyan glow
   const capH = Math.max(0.10, h * 0.18);
   const topMat = new THREE.MeshStandardMaterial({
-    color: 0x2a3855, emissive: 0x66ccff, emissiveIntensity: 1.2,
+    color: 0x2a3855, emissive: 0x5fd0ff, emissiveIntensity: 1.3,
     roughness: 0.25, metalness: 0.15
   });
   const cap = new THREE.Mesh(new THREE.BoxGeometry(w * 0.94, capH, d * 0.94), topMat);
@@ -313,7 +317,7 @@ function buildElectricPlatformVisual(w, h, d) {
   const haloScale = 1.22;
   g.add(new THREE.Mesh(
     new THREE.BoxGeometry(w * haloScale, h * haloScale, d * haloScale),
-    new THREE.MeshBasicMaterial({ color: 0x66ccff, side: THREE.BackSide, transparent: true, opacity: 0.22, depthWrite: false })
+    new THREE.MeshBasicMaterial({ color: 0x5fd0ff, side: THREE.BackSide, transparent: true, opacity: 0.26, depthWrite: false })
   ));
   return { group: g, topMat };
 }
@@ -1480,7 +1484,11 @@ function clearStormBackground() {
   stormBoltTimer  = 3.0;
   stormPhasePlats = [];
   stormElecPlats  = [];
-  stormCloudPlanes = [];
+  stormCloudPlanes   = [];
+  stormFogLayers     = [];
+  stormCeilingLayers = [];
+  stormWallClouds    = [];
+  stormBaseBackground = null;
   windActive = false; windForceX = 0; windTimer = 0; windGustDur = 0; nextGust = 5.0;
 }
 
@@ -1488,89 +1496,110 @@ function buildStormBackground() {
   stormGroup = new THREE.Group();
   scene.add(stormGroup);
 
-  // ── Dark cloud layers (3 tiers, canvas textures) ──
-  function addCloudLayer(y, z, w, h, opacity, rotSpeed) {
-    const cv = document.createElement("canvas"); cv.width = 512; cv.height = 128;
-    const ctx = cv.getContext("2d");
-    // Stormy gradient base — brighter than background for visible cloud masses
-    const grad = ctx.createLinearGradient(0, 0, 0, 128);
-    grad.addColorStop(0,   "rgba(40,55,80,0.0)");
-    grad.addColorStop(0.3, "rgba(55,75,105," + opacity + ")");
-    grad.addColorStop(0.7, "rgba(45,65,95," + opacity + ")");
-    grad.addColorStop(1,   "rgba(40,55,80,0.0)");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 512, 128);
-    // Cloud noise — bright patches for volumetric mass
-    for (let i = 0; i < 40; i++) {
-      const cx = Math.random() * 512, cy = Math.random() * 128;
-      const r = 20 + Math.random() * 60;
-      const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-      rg.addColorStop(0, "rgba(80,100,140," + (0.30 + Math.random() * 0.25) + ")");
-      rg.addColorStop(1, "rgba(45,65,95,0)");
-      ctx.fillStyle = rg;
-      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+  // ── Rolling storm cloud helper (storm-palette version of Level 8's makeRollingCloud) ──
+  function makeStormCloud(cfg) {
+    const { blobCount, blobMaxR, baseColor, blobColor, colorHex, opacity,
+            yPos, zOffset, size, segs, waveAmp, seed, repeatS } = cfg;
+    let _cs = seed;
+    function cr() { _cs = (_cs * 16807) % 2147483647; return (_cs - 1) / 2147483646; }
+
+    const cc = document.createElement("canvas"); cc.width = 512; cc.height = 512;
+    const cctx = cc.getContext("2d");
+    // Dark base fill
+    const br = (baseColor >> 16) & 0xff, bg = (baseColor >> 8) & 0xff, bb = baseColor & 0xff;
+    cctx.fillStyle = `rgba(${br},${bg},${bb},0.3)`;
+    cctx.fillRect(0, 0, 512, 512);
+    // Storm cloud blobs
+    for (let i = 0; i < blobCount; i++) {
+      const bx = cr() * 512, by = cr() * 512;
+      const blobR = (blobMaxR * 0.35) + cr() * (blobMaxR * 0.65);
+      const grad = cctx.createRadialGradient(bx, by, 0, bx, by, blobR);
+      const cr2 = (blobColor >> 16) & 0xff, cg2 = (blobColor >> 8) & 0xff, cb2 = blobColor & 0xff;
+      grad.addColorStop(0,   `rgba(${cr2},${cg2},${cb2},0.55)`);
+      grad.addColorStop(0.4, `rgba(${cr2},${cg2},${cb2},0.25)`);
+      grad.addColorStop(1,   `rgba(${cr2},${cg2},${cb2},0)`);
+      cctx.fillStyle = grad;
+      cctx.fillRect(bx - blobR, by - blobR, blobR * 2, blobR * 2);
     }
-    const tex = new THREE.CanvasTexture(cv);
+    const tex = new THREE.CanvasTexture(cc);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(2, 1);
+    tex.repeat.set(repeatS, repeatS);
+
     const mat = new THREE.MeshBasicMaterial({
-      map: tex, transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide
+      map: tex, color: colorHex, transparent: true, opacity,
+      depthWrite: false, side: THREE.DoubleSide, fog: false
     });
-    const plane = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
-    plane.position.set(0, y, z);
-    plane.rotation.x = -0.12;
-    stormGroup.add(plane);
-    stormCloudPlanes.push({ mesh: plane, rotSpeed });
-  }
-  addCloudLayer(55, -90,  220, 50, 0.75, 0.006);
-  addCloudLayer(65, -120, 260, 60, 0.60, -0.004);
-  addCloudLayer(75, -150, 200, 40, 0.50, 0.008);
 
-  // Overhead cloud ceiling (looks up → dark clouds above)
-  {
-    const cv = document.createElement("canvas"); cv.width = 256; cv.height = 256;
-    const ctx = cv.getContext("2d");
-    ctx.fillStyle = "rgba(30,44,68,0.85)";
-    ctx.fillRect(0, 0, 256, 256);
-    for (let i = 0; i < 60; i++) {
-      const cx = Math.random() * 256, cy = Math.random() * 256;
-      const r = 15 + Math.random() * 40;
-      const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-      rg.addColorStop(0, "rgba(60,80,115,0.45)");
-      rg.addColorStop(1, "rgba(30,44,68,0)");
-      ctx.fillStyle = rg;
-      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    const geo = new THREE.PlaneGeometry(size, size, segs, segs);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const lx = pos.getX(i), ly = pos.getY(i);
+      const d = Math.sin(lx * 0.014 + seed * 2.7) * Math.cos(ly * 0.011 + seed * 1.3) * waveAmp
+              + Math.sin(lx * 0.027 + ly * 0.019 + seed * 4.1) * waveAmp * 0.35
+              + (cr() - 0.5) * waveAmp * 0.12;
+      pos.setZ(i, d);
     }
-    const ceil = new THREE.Mesh(
-      new THREE.PlaneGeometry(300, 300),
-      new THREE.MeshBasicMaterial({
-        map: new THREE.CanvasTexture(cv), transparent: true, opacity: 0.75,
-        depthWrite: false, fog: false, side: THREE.DoubleSide
-      })
-    );
-    ceil.rotation.x = Math.PI * 0.5;
-    ceil.position.set(0, 80, -85);
-    stormGroup.add(ceil);
+    geo.computeVertexNormals();
+
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(0, yPos, zOffset);
+    mesh.renderOrder = 1;
+    stormGroup.add(mesh);
+    return { mesh, mat };
   }
 
-  // ── Fog floor below platforms ──
-  {
-    const fogPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(400, 300),
-      new THREE.MeshBasicMaterial({
-        color: 0x1a2844, transparent: true, opacity: 0.80, depthWrite: false, fog: false
-      })
-    );
-    fogPlane.rotation.x = -Math.PI * 0.5;
-    fogPlane.position.set(0, -15, -85);
-    stormGroup.add(fogPlane);
-  }
+  // ── Rolling storm cloud layers — surround the player at visible heights ──
+  // Platforms at y=0-7, camera at ~y=6-13. Clouds at y=8-32 are visible.
+  const sc1 = makeStormCloud({ blobCount: 50, blobMaxR: 140, baseColor: 0x111c2f, blobColor: 0x1b2b47,
+    colorHex: 0x111c2f, opacity: 0.35, yPos: 12, zOffset: -85, size: 800, segs: 36, waveAmp: 3.0, seed: 8317, repeatS: 3 });
+  const sc2 = makeStormCloud({ blobCount: 60, blobMaxR: 120, baseColor: 0x0e1828, blobColor: 0x1a2840,
+    colorHex: 0x0e1828, opacity: 0.30, yPos: 18, zOffset: -85, size: 900, segs: 32, waveAmp: 2.5, seed: 4421, repeatS: 4 });
+  const sc3 = makeStormCloud({ blobCount: 45, blobMaxR: 150, baseColor: 0x152538, blobColor: 0x1f3350,
+    colorHex: 0x152538, opacity: 0.22, yPos: 25, zOffset: -85, size: 1000, segs: 28, waveAmp: 2.0, seed: 6103, repeatS: 5 });
+  const sc4 = makeStormCloud({ blobCount: 55, blobMaxR: 130, baseColor: 0x0d1a2e, blobColor: 0x162840,
+    colorHex: 0x0d1a2e, opacity: 0.28, yPos: 8, zOffset: -85, size: 850, segs: 30, waveAmp: 3.5, seed: 7209, repeatS: 3 });
+  const sc5 = makeStormCloud({ blobCount: 35, blobMaxR: 160, baseColor: 0x0a1322, blobColor: 0x14243a,
+    colorHex: 0x0a1322, opacity: 0.15, yPos: 32, zOffset: -85, size: 1100, segs: 24, waveAmp: 1.5, seed: 5517, repeatS: 6 });
 
-  // ── Rain system (InstancedMesh) ──
+  stormCloudPlanes = [
+    { ...sc1, baseX: 0, baseZ: -85, oscSpeed: 0.12, uvSpeed: 0.004 },
+    { ...sc2, baseX: 0, baseZ: -85, oscSpeed: 0.08, uvSpeed: 0.003 },
+    { ...sc3, baseX: 0, baseZ: -85, oscSpeed: 0.05, uvSpeed: 0.002 },
+    { ...sc4, baseX: 0, baseZ: -85, oscSpeed: 0.10, uvSpeed: 0.0035 },
+    { ...sc5, baseX: 0, baseZ: -85, oscSpeed: 0.035, uvSpeed: 0.0015 },
+  ];
+
+  // ── Overhead cloud ceiling — dense, dark, oppressive ──
+  const ceil1 = makeStormCloud({ blobCount: 70, blobMaxR: 120, baseColor: 0x0a1020, blobColor: 0x152030,
+    colorHex: 0x0a1020, opacity: 0.50, yPos: 35, zOffset: -85, size: 600, segs: 32, waveAmp: 1.5, seed: 9901, repeatS: 3 });
+  const ceil2 = makeStormCloud({ blobCount: 80, blobMaxR: 100, baseColor: 0x080e1a, blobColor: 0x101e30,
+    colorHex: 0x080e1a, opacity: 0.40, yPos: 42, zOffset: -85, size: 700, segs: 28, waveAmp: 1.0, seed: 1133, repeatS: 4 });
+
+  stormCeilingLayers = [
+    { ...ceil1, baseX: 0, baseZ: -85, oscSpeed: 0.04, uvSpeed: 0.002 },
+    { ...ceil2, baseX: 0, baseZ: -85, oscSpeed: 0.025, uvSpeed: 0.0012 },
+  ];
+
+  // ── Rolling fog floor — multi-layer, lurking below platforms ──
+  const ff1 = makeStormCloud({ blobCount: 45, blobMaxR: 150, baseColor: 0x0d1a2e, blobColor: 0x162840,
+    colorHex: 0x0d1a2e, opacity: 0.45, yPos: -5, zOffset: -85, size: 900, segs: 36, waveAmp: 2.0, seed: 3317, repeatS: 3 });
+  const ff2 = makeStormCloud({ blobCount: 55, blobMaxR: 130, baseColor: 0x0a1525, blobColor: 0x121e35,
+    colorHex: 0x0a1525, opacity: 0.35, yPos: -10, zOffset: -85, size: 1000, segs: 30, waveAmp: 1.5, seed: 2209, repeatS: 4 });
+  const ff3 = makeStormCloud({ blobCount: 40, blobMaxR: 160, baseColor: 0x081220, blobColor: 0x0f1a2c,
+    colorHex: 0x081220, opacity: 0.25, yPos: -18, zOffset: -85, size: 1100, segs: 24, waveAmp: 1.2, seed: 6641, repeatS: 5 });
+
+  stormFogLayers = [
+    { ...ff1, baseX: 0, baseZ: -85, oscSpeed: 0.10, uvSpeed: 0.005 },
+    { ...ff2, baseX: 0, baseZ: -85, oscSpeed: 0.07, uvSpeed: 0.003 },
+    { ...ff3, baseX: 0, baseZ: -85, oscSpeed: 0.04, uvSpeed: 0.002 },
+  ];
+
+  // ── Heavy rain system (InstancedMesh) — 800 drops ──
   {
-    const rainGeo = new THREE.CylinderGeometry(0.02, 0.02, 1.5, 3, 1);
+    const rainGeo = new THREE.CylinderGeometry(0.03, 0.03, 2.0, 3, 1);
     const rainMat = new THREE.MeshBasicMaterial({
-      color: 0xaabbdd, transparent: true, opacity: 0.55, depthWrite: false, fog: false
+      color: 0xbbccee, transparent: true, opacity: 0.65, depthWrite: false, fog: false
     });
     stormRainMesh = new THREE.InstancedMesh(rainGeo, rainMat, STORM_RAIN_COUNT);
     stormRainMesh.frustumCulled = false;
@@ -1578,11 +1607,11 @@ function buildStormBackground() {
     stormRainData = [];
     for (let i = 0; i < STORM_RAIN_COUNT; i++) {
       stormRainData.push({
-        x: (Math.random() - 0.5) * 180,
-        y: Math.random() * 70 - 10,
+        x: (Math.random() - 0.5) * 140,
+        y: Math.random() * 50 - 10,
         z: -Math.random() * 200,
-        speed: 25 + Math.random() * 12,
-        drift: (Math.random() - 0.5) * 2.0,
+        speed: 30 + Math.random() * 20,
+        drift: (Math.random() - 0.5) * 3.0,
         phase: Math.random() * Math.PI * 2,
       });
       stormRainDummy.position.set(stormRainData[i].x, stormRainData[i].y, stormRainData[i].z);
@@ -1592,33 +1621,33 @@ function buildStormBackground() {
     stormRainMesh.instanceMatrix.needsUpdate = true;
   }
 
-  // ── Wind streaks (BufferGeometry lines) ──
+  // ── Wind streaks (BufferGeometry lines) — 100 longer, brighter ──
   {
-    const positions = new Float32Array(STORM_WIND_COUNT * 6); // 2 verts per streak
+    const positions = new Float32Array(STORM_WIND_COUNT * 6);
     stormWindData = [];
     for (let i = 0; i < STORM_WIND_COUNT; i++) {
       const x = (Math.random() - 0.5) * 160;
-      const y = Math.random() * 40 - 5;
+      const y = Math.random() * 35 - 5;
       const z = -Math.random() * 180;
-      const len = 1.5 + Math.random() * 2.5;
+      const len = 2.0 + Math.random() * 3.0;
       positions[i * 6]     = x;
       positions[i * 6 + 1] = y;
       positions[i * 6 + 2] = z;
       positions[i * 6 + 3] = x + len;
       positions[i * 6 + 4] = y;
       positions[i * 6 + 5] = z;
-      stormWindData.push({ x, y, z, len, speed: 15 + Math.random() * 10 });
+      stormWindData.push({ x, y, z, len, speed: 18 + Math.random() * 14 });
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     stormWindStreaks = new THREE.LineSegments(geo,
-      new THREE.LineBasicMaterial({ color: 0x7799bb, transparent: true, opacity: 0.45, depthWrite: false, fog: false })
+      new THREE.LineBasicMaterial({ color: 0x88aacc, transparent: true, opacity: 0.55, depthWrite: false, fog: false })
     );
     scene.add(stormWindStreaks);
   }
 
   // ── Storm flash light (reusable, starts at 0 intensity) ──
-  stormFlashLight = new THREE.DirectionalLight(0x9ad8ff, 0);
+  stormFlashLight = new THREE.DirectionalLight(0x9fd8ff, 0);
   stormFlashLight.position.set(0, 60, -40);
   scene.add(stormFlashLight);
 
@@ -1634,14 +1663,56 @@ function buildStormBackground() {
         roughness: 0.7, metalness: 0.3
       })
     );
-    debris.position.set(
-      (Math.random() - 0.5) * 120,
-      -8 + Math.random() * 5,
-      -20 - Math.random() * 150
-    );
+    debris.position.set((Math.random() - 0.5) * 120, -8 + Math.random() * 5, -20 - Math.random() * 150);
     debris.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
     stormGroup.add(debris);
   }
+
+  // ── Distant storm wall masses — fill the periphery ──
+  function addStormWall(xPos, zPos, yPos, rotY, width, height, opacity, seed) {
+    const cv = document.createElement("canvas"); cv.width = 512; cv.height = 256;
+    const ctx = cv.getContext("2d");
+    const grad = ctx.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0,   "rgba(17,28,47,0.0)");
+    grad.addColorStop(0.2, "rgba(17,28,47," + (opacity * 0.8) + ")");
+    grad.addColorStop(0.5, "rgba(14,24,40," + opacity + ")");
+    grad.addColorStop(0.8, "rgba(17,28,47," + (opacity * 0.8) + ")");
+    grad.addColorStop(1,   "rgba(10,19,34,0.0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 512, 256);
+    let _s = seed;
+    function sr() { _s = (_s * 16807) % 2147483647; return (_s - 1) / 2147483646; }
+    for (let i = 0; i < 50; i++) {
+      const cx = sr() * 512, cy = sr() * 256;
+      const r = 30 + sr() * 80;
+      const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      rg.addColorStop(0, "rgba(27,43,71," + (0.3 + sr() * 0.25) + ")");
+      rg.addColorStop(1, "rgba(17,28,47,0)");
+      ctx.fillStyle = rg;
+      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    }
+    const tex = new THREE.CanvasTexture(cv);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(3, 1);
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex, transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide
+    });
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(width, height), mat);
+    plane.position.set(xPos, yPos, zPos);
+    plane.rotation.y = rotY;
+    stormGroup.add(plane);
+    stormWallClouds.push({ mesh: plane, mat, uvSpeed: 0.001 + sr() * 0.001 });
+  }
+  addStormWall(-80, -85, 15, Math.PI * 0.15, 300, 70, 0.55, 1117);
+  addStormWall( 80, -85, 15, -Math.PI * 0.15, 300, 70, 0.55, 2233);
+  addStormWall(  0, -250, 15, 0, 350, 80, 0.45, 3349);
+  addStormWall(  0,  40, 15, Math.PI, 300, 60, 0.40, 4461);
+
+  // ── Store base state for lightning flash lerp ──
+  stormBaseBackground = scene.background.clone();
+  for (const cp of stormCloudPlanes)   cp.mat._baseOpacity = cp.mat.opacity;
+  for (const cl of stormCeilingLayers) cl.mat._baseOpacity = cl.mat.opacity;
+  for (const fl of stormFogLayers)     fl.mat._baseOpacity = fl.mat.opacity;
 }
 
 function updateVolcano(dt) {
@@ -3966,19 +4037,19 @@ function buildLevel9() {
   stormPlatform({ x: 0,  y: 7,   z: -172, w: 10, d: 8, color: SC.bright });
 
   // Environmental electric glow lights
-  const el1 = new THREE.PointLight(0x66ccff, 1.0, 80);
+  const el1 = new THREE.PointLight(0x5fd0ff, 1.2, 90);
   el1.position.set(-15, 10, -55);
   scene.add(el1); decorations.push(el1);
 
-  const el2 = new THREE.PointLight(0x4488cc, 0.9, 80);
+  const el2 = new THREE.PointLight(0x4488cc, 1.0, 90);
   el2.position.set(15, 12, -120);
   scene.add(el2); decorations.push(el2);
 
-  const el3 = new THREE.PointLight(0x5599cc, 0.8, 70);
+  const el3 = new THREE.PointLight(0x5599cc, 0.9, 80);
   el3.position.set(0, 10, -30);
   scene.add(el3); decorations.push(el3);
 
-  const el4 = new THREE.PointLight(0x66ccff, 0.7, 70);
+  const el4 = new THREE.PointLight(0x5fd0ff, 0.8, 80);
   el4.position.set(0, 12, -160);
   scene.add(el4); decorations.push(el4);
 
@@ -4134,14 +4205,14 @@ function loadLevel(n) {
   } else if (n === 9) {
     // Level 9 — Storm Realm
     sky.visible      = false;
-    scene.background = new THREE.Color(0x0e1a2a);
-    scene.fog        = new THREE.FogExp2(0x152538, 0.008);
+    scene.background = new THREE.Color(0x0a1322);
+    scene.fog        = new THREE.FogExp2(0x0d1a2e, 0.006);
     gravity          = -26;
-    ambientLight.intensity = 0.55; ambientLight.color.setHex(0x334455);
-    sunLight.color.setHex(0x7799cc); sunLight.intensity = 0.8;
+    ambientLight.intensity = 0.45; ambientLight.color.setHex(0x2a3a50);
+    sunLight.color.setHex(0x6688aa); sunLight.intensity = 0.6;
     sunLight.position.set(10, 50, -60);
-    skyFill.color.setHex(0x445577); skyFill.intensity = 0.30;
-    renderer.toneMappingExposure = 0.65;
+    skyFill.color.setHex(0x3a4466); skyFill.intensity = 0.20;
+    renderer.toneMappingExposure = 0.55;
     clouds.forEach(c => c.visible = false);
     buildStormBackground();
   } else {
@@ -5376,10 +5447,17 @@ function spawnLightningBolt(targetX, targetZ) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   const mat = new THREE.LineBasicMaterial({
-    color: 0x9ad8ff, transparent: true, opacity: 0.92, depthWrite: false, linewidth: 2
+    color: 0x9fd8ff, transparent: true, opacity: 0.95, depthWrite: false, linewidth: 2
   });
   const bolt = new THREE.LineSegments(geo, mat);
   scene.add(bolt);
+  // Glow bolt — wider, dimmer, gives volumetric lightning feel
+  const glowGeo = geo.clone();
+  const glowBolt = new THREE.LineSegments(glowGeo,
+    new THREE.LineBasicMaterial({ color: 0x5fd0ff, transparent: true, opacity: 0.35, depthWrite: false, linewidth: 2 })
+  );
+  glowBolt.scale.set(1.3, 1.0, 1.3);
+  scene.add(glowBolt);
   // Secondary thinner branch
   const branchPositions = new Float32Array(4 * 6);
   const midIdx = Math.floor(segments * 0.4);
@@ -5398,17 +5476,18 @@ function spawnLightningBolt(targetX, targetZ) {
   const branchGeo = new THREE.BufferGeometry();
   branchGeo.setAttribute("position", new THREE.BufferAttribute(branchPositions, 3));
   const branch = new THREE.LineSegments(branchGeo,
-    new THREE.LineBasicMaterial({ color: 0x9ad8ff, transparent: true, opacity: 0.55, depthWrite: false })
+    new THREE.LineBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.55, depthWrite: false })
   );
   scene.add(branch);
 
   stormLightning.push({ mesh: bolt, timer: 0.25 });
+  stormLightning.push({ mesh: glowBolt, timer: 0.30 });
   stormLightning.push({ mesh: branch, timer: 0.25 });
 
   // Flash
   stormFlashTimer = 0.20;
   if (stormFlashLight) stormFlashLight.intensity = 4.0;
-  ambientLight.intensity = 1.4;
+  ambientLight.intensity = 1.6;
 
   // Electrify nearby electric platforms
   for (const ep of stormElecPlats) {
@@ -5428,10 +5507,10 @@ function pulseStormStatics() {
       if (mat && "emissiveIntensity" in mat) {
         if (s.electrified) {
           mat.emissiveIntensity = 2.0 + Math.sin(time * 20) * 0.5;
-          mat.emissive.setHex(0xeeffff);
+          mat.emissive.setHex(0xddf0ff);
         } else {
           mat.emissiveIntensity = s.baseEI + 0.3 * (0.5 + 0.5 * Math.sin(time * 4 + s.mesh.position.z * 0.08));
-          mat.emissive.setHex(0x66ccff);
+          mat.emissive.setHex(0x5fd0ff);
         }
       }
     }
@@ -5465,15 +5544,40 @@ function updateStorm(dt, countdown) {
     }
   }
 
-  // ── Flash fade ──
+  // ── Flash fade — background + cloud layers respond to lightning ──
   if (stormFlashTimer > 0) {
     stormFlashTimer -= dt;
     const t = Math.max(0, stormFlashTimer / 0.20);
     if (stormFlashLight) stormFlashLight.intensity = 4.0 * t;
-    ambientLight.intensity = 0.55 + (1.4 - 0.55) * t;
+    ambientLight.intensity = 0.45 + (1.6 - 0.45) * t;
+    // Flash scene background
+    if (stormBaseBackground) {
+      scene.background.copy(stormBaseBackground).lerp(new THREE.Color(0x2a4060), t * 0.7);
+    }
+    // Temporarily boost cloud/ceiling/fog opacity during flash
+    for (const cp of stormCloudPlanes) {
+      if (cp.mat && cp.mat._baseOpacity !== undefined) cp.mat.opacity = cp.mat._baseOpacity + 0.25 * t;
+    }
+    for (const cl of stormCeilingLayers) {
+      if (cl.mat && cl.mat._baseOpacity !== undefined) cl.mat.opacity = cl.mat._baseOpacity + 0.20 * t;
+    }
+    for (const fl of stormFogLayers) {
+      if (fl.mat && fl.mat._baseOpacity !== undefined) fl.mat.opacity = fl.mat._baseOpacity + 0.15 * t;
+    }
   } else {
     if (stormFlashLight) stormFlashLight.intensity = 0;
-    ambientLight.intensity = 0.55;
+    ambientLight.intensity = 0.45;
+    // Restore base background and cloud opacities
+    if (stormBaseBackground) scene.background.copy(stormBaseBackground);
+    for (const cp of stormCloudPlanes) {
+      if (cp.mat && cp.mat._baseOpacity !== undefined) cp.mat.opacity = cp.mat._baseOpacity;
+    }
+    for (const cl of stormCeilingLayers) {
+      if (cl.mat && cl.mat._baseOpacity !== undefined) cl.mat.opacity = cl.mat._baseOpacity;
+    }
+    for (const fl of stormFogLayers) {
+      if (fl.mat && fl.mat._baseOpacity !== undefined) fl.mat.opacity = fl.mat._baseOpacity;
+    }
   }
 
   if (!countdown) {
@@ -5560,14 +5664,14 @@ function updateStorm(dt, countdown) {
       drop.y -= drop.speed * dt;
       drop.x += (drop.drift + windDrift) * dt;
       if (drop.y < -15) {
-        drop.y = 55 + Math.random() * 15;
-        drop.x = (Math.random() - 0.5) * 180;
+        drop.y = 40 + Math.random() * 10;
+        drop.x = (Math.random() - 0.5) * 140;
         drop.z = pz - Math.random() * 200;
       }
       if (drop.z > pz + 20) {
         drop.z = pz - Math.random() * 200;
-        drop.x = (Math.random() - 0.5) * 180;
-        drop.y = 30 + Math.random() * 30;
+        drop.x = (Math.random() - 0.5) * 140;
+        drop.y = 25 + Math.random() * 20;
       }
       stormRainDummy.position.set(drop.x, drop.y, drop.z);
       stormRainDummy.updateMatrix();
@@ -5597,9 +5701,24 @@ function updateStorm(dt, countdown) {
     stormWindStreaks.geometry.attributes.position.needsUpdate = true;
   }
 
-  // ── Cloud layer slow drift ──
+  // ── Animate rolling storm cloud layers (UV scroll + position oscillation) ──
   for (const cp of stormCloudPlanes) {
-    cp.mesh.rotation.y += cp.rotSpeed * dt;
+    if (cp.mat.map) cp.mat.map.offset.x -= cp.uvSpeed * dt;
+    cp.mesh.position.x = cp.baseX + Math.sin(time * cp.oscSpeed) * 6;
+    cp.mesh.position.z = cp.baseZ + Math.cos(time * cp.oscSpeed * 0.7) * 4;
+  }
+  for (const cl of stormCeilingLayers) {
+    if (cl.mat.map) cl.mat.map.offset.x -= cl.uvSpeed * dt;
+    cl.mesh.position.x = cl.baseX + Math.sin(time * cl.oscSpeed + 1.5) * 4;
+    cl.mesh.position.z = cl.baseZ + Math.cos(time * cl.oscSpeed * 0.6) * 3;
+  }
+  for (const fl of stormFogLayers) {
+    if (fl.mat.map) fl.mat.map.offset.x -= fl.uvSpeed * dt;
+    fl.mesh.position.x = fl.baseX + Math.sin(time * fl.oscSpeed + 0.8) * 5;
+    fl.mesh.position.z = fl.baseZ + Math.cos(time * fl.oscSpeed * 0.7 + 0.5) * 3;
+  }
+  for (const sw of stormWallClouds) {
+    if (sw.mat.map) sw.mat.map.offset.x -= sw.uvSpeed * dt;
   }
 
   // ── Floating debris gentle bob ──
