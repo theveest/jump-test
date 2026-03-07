@@ -465,6 +465,10 @@ function boxPlatform({ x, y, z, w, h, d, color = 0xFFDD00, neon = false, emissiv
   col.position.set(x, y, z);
   scene.add(col);
   let topMat = null;
+  // vtop = how far the visible top surface extends above the collision box top.
+  // Standard bright/neon levels have a cap slab above the collision top;
+  // ice and storm visuals align the visual top with the collision top.
+  let vtop = 0;
   if (levelMat.iceVisual) {
     const result = buildIcePlatformVisual(w, h, d, emissive, accent, platType);
     col.add(result.group);
@@ -475,8 +479,10 @@ function boxPlatform({ x, y, z, w, h, d, color = 0xFFDD00, neon = false, emissiv
     topMat = result.topMat;
   } else {
     col.add(neon ? buildNeonVisual(w, h, d, color) : buildBrightVisual(w, h, d, color));
+    const capH = Math.max(0.06, h * 0.12);
+    vtop = capH + 0.001;
   }
-  solids.push({ type: "box", mesh: col, w, h, d, topMat, baseEI: topMat ? topMat.emissiveIntensity : 0 });
+  solids.push({ type: "box", mesh: col, w, h, d, vtop, topMat, baseEI: topMat ? topMat.emissiveIntensity : 0 });
   return col;
 }
 
@@ -488,6 +494,7 @@ function movingPlatform({ x, y, z, w, h, d, axis = "x", amplitude = 2.5, speed =
   col.position.set(x, y, z);
   scene.add(col);
   let moverTopMat = null;
+  let vtop = 0;
   if (levelMat.iceVisual) {
     const result = buildIcePlatformVisual(w, h, d, emissive, accent, platType);
     col.add(result.group);
@@ -498,9 +505,11 @@ function movingPlatform({ x, y, z, w, h, d, axis = "x", amplitude = 2.5, speed =
     moverTopMat = result.topMat;
   } else {
     col.add(neon ? buildNeonVisual(w, h, d, color) : buildBrightVisual(w, h, d, color));
+    const capH = Math.max(0.06, h * 0.12);
+    vtop = capH + 0.001;
   }
   movers.push({
-    type: "mover", mesh: col, w, h, d,
+    type: "mover", mesh: col, w, h, d, vtop,
     basePos: col.position.clone(),
     axis, amplitude, speed, phase,
     prevPos: col.position.clone(),
@@ -4875,24 +4884,35 @@ function updateShadow() {
   const px = player.position.x, pz = player.position.z;
   const feet = player.position.y - playerHalf.y;
   let bestTop = -9999;
+  let bestVtop = 0;  // visual top offset of the best candidate
   for (let i = 0; i < solids.length; i++) {
     const p = solids[i];
     if (Math.abs(px - p.mesh.position.x) > p.w / 2 + 0.5) continue;
     if (Math.abs(pz - p.mesh.position.z) > p.d / 2 + 0.5) continue;
     const top = p.mesh.position.y + p.h / 2;
-    if (top < feet + 0.3 && top > bestTop) bestTop = top;
+    if (top < feet + 0.3 && top > bestTop) { bestTop = top; bestVtop = p.vtop || 0; }
   }
   for (let i = 0; i < movers.length; i++) {
     const p = movers[i];
     if (Math.abs(px - p.mesh.position.x) > p.w / 2 + 0.5) continue;
     if (Math.abs(pz - p.mesh.position.z) > p.d / 2 + 0.5) continue;
     const top = p.mesh.position.y + p.h / 2;
-    if (top < feet + 0.3 && top > bestTop) bestTop = top;
+    if (top < feet + 0.3 && top > bestTop) { bestTop = top; bestVtop = p.vtop || 0; }
+  }
+  // Also check ramps — compute the ramp surface height at the player's XZ position
+  for (let i = 0; i < ramps.length; i++) {
+    const r = ramps[i];
+    const yRamp = rampHeightAt(r, px, pz);
+    if (yRamp == null) continue;
+    const vt  = Math.max(r.thickness, 0.7);
+    const top = yRamp + (vt - r.thickness * 0.5) * r.normal.y;
+    if (top < feet + 0.3 && top > bestTop) { bestTop = top; bestVtop = 0; }
   }
   if (bestTop > -9999) {
     const height = Math.max(0, feet - bestTop);
     const scale  = Math.max(0, 1.0 - height / 10.0);
-    shadowMesh.position.set(px, bestTop + 0.03, pz);
+    // Place shadow on the visual surface (collision top + visual cap offset + z-fight clearance)
+    shadowMesh.position.set(px, bestTop + bestVtop + 0.03, pz);
     shadowMesh.scale.setScalar(scale * 1.3 + 0.15);
     shadowMat.opacity  = 0.38 * scale;
     shadowMesh.visible = true;
