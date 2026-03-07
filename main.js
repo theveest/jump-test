@@ -243,12 +243,7 @@ function buildNeonVisual(w, h, d, color) {
 
 // ===== Level 8 platform visuals — three distinct types =====
 // Shared helper: crisp cold-blue edge outline on the base body (12 lines, very cheap)
-function iceEdgeGlow(w, h, d) {
-  return new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d)),
-    new THREE.LineBasicMaterial({ color: 0xe6f7ff, transparent: true, opacity: 0.20, depthWrite: false })
-  );
-}
+// iceEdgeGlow removed — Level 8 visuals no longer use layered edge lines
 
 // ===== Level 9 platform visuals — Storm Realm =====
 function stormEdgeGlow(w, h, d) {
@@ -352,135 +347,77 @@ function buildPhasePlatformVisual(w, h, d) {
 
 function buildSlipperyIceVisual(w, h, d) {
   const g = new THREE.Group();
-  // White matte base — self-illuminates white (emissive 0.35) to overcome Level 8 dim ambient
-  const baseMat = new THREE.MeshStandardMaterial({
-    color: 0xf1f7fa, emissive: 0xffffff, emissiveIntensity: 3.0,
-    roughness: 0.88, metalness: 0.0, transparent: true, opacity: 0.96, flatShading: true
-  });
-  const base = new THREE.Mesh(new RoundedBoxGeometry(w, h * 0.92, d, 2, 0.10), baseMat);
-  base.position.y = -h * 0.04;
-  g.add(base);
-  const glow = iceEdgeGlow(w, h * 0.92, d);
-  glow.position.y = base.position.y;
-  g.add(glow);
-  // Frosted top plate — white emissive matches snow brightness, no metalness darkening
-  const topMat = new THREE.MeshStandardMaterial({
-    color: 0xf4faff, emissive: 0xffffff, emissiveIntensity: 3.0,
-    roughness: 0.10, metalness: 0.0
-  });
-  const top = new THREE.Mesh(
-    new THREE.BoxGeometry(w * 0.94, Math.max(0.18, h * 0.20), d * 0.94), topMat
-  );
-  top.position.y = h * 0.35;
-  g.add(top);
-  // Edge rail
-  const rail = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.BoxGeometry(w * 0.94 + 0.02, Math.max(0.18, h * 0.20) + 0.02, d * 0.94 + 0.02)),
-    new THREE.LineBasicMaterial({ color: 0xaaf4ff, transparent: true, opacity: 0.45, depthWrite: false })
-  );
-  rail.position.y = top.position.y;
-  g.add(rail);
+  const vh = h * 2.5;
+  const r = Math.min(w, vh, d) * 0.5;
+  const geo = new RoundedBoxGeometry(w, vh, d, 5, r);
+  // Polished ice: brighter frost top to cooler ice blue bottom, tighter shading for gloss
+  const pos = geo.attributes.position;
+  const nrm = geo.attributes.normal;
+  const colors = new Float32Array(pos.count * 3);
+  const topC    = new THREE.Color(0xe8f6ff);
+  const bottomC = new THREE.Color(0x88c8e0);
+  const tmp     = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const ny = (pos.getY(i) / (vh * 0.5) + 1.0) * 0.5;
+    const t = Math.pow(ny, 0.7);
+    tmp.copy(bottomC).lerp(topC, t);
+    // Tighter shading range for glossy feel: sides still bright; boost for tone mapping
+    const shade = (0.80 + 0.20 * Math.max(0, nrm.getY(i))) * 2.8;
+    tmp.r *= shade;  tmp.g *= shade;  tmp.b *= shade;
+    colors[i * 3] = tmp.r;  colors[i * 3 + 1] = tmp.g;  colors[i * 3 + 2] = tmp.b;
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  const topMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+  const body = new THREE.Mesh(geo, topMat);
+  body.position.y = -(vh - h) * 0.5;
+  g.add(body);
   return { group: g, topMat };
 }
 
 function buildFallingIceVisual(w, h, d) {
   const g = new THREE.Group();
-  // White matte base — same foundation as snow; falling platforms look safe until you notice the underside
-  const baseMat = new THREE.MeshStandardMaterial({
-    color: 0xf1f7fa, emissive: 0xffffff, emissiveIntensity: 2.0,
-    roughness: 0.88, metalness: 0.0, transparent: true, opacity: 0.96, flatShading: true
-  });
-  const base = new THREE.Mesh(new RoundedBoxGeometry(w, h * 0.92, d, 2, 0.10), baseMat);
-  base.position.y = -h * 0.04;
-  g.add(base);
-  const glow = iceEdgeGlow(w, h * 0.92, d);
-  glow.position.y = base.position.y;
-  g.add(glow);
-  // Top plate — near-white, very slight cool tint hints at instability
-  const topMat = new THREE.MeshStandardMaterial({
-    color: 0xeef4f8, emissive: 0xddeeff, emissiveIntensity: 1.5,
-    roughness: 0.05, metalness: 0.0, transparent: true, opacity: 0.88
-  });
-  const top = new THREE.Mesh(
-    new THREE.BoxGeometry(w * 0.94, Math.max(0.18, h * 0.20), d * 0.94), topMat
-  );
-  top.position.y = h * 0.35;
-  g.add(top);
-  // Edge rail
-  const rail = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.BoxGeometry(w * 0.94 + 0.02, Math.max(0.18, h * 0.20) + 0.02, d * 0.94 + 0.02)),
-    new THREE.LineBasicMaterial({ color: 0x9ff8ff, transparent: true, opacity: 0.35, depthWrite: false })
-  );
-  rail.position.y = top.position.y;
-  g.add(rail);
-  // Deep cool blue underside — visual danger warning
-  const under = new THREE.Mesh(
-    new THREE.BoxGeometry(w * 0.90, Math.max(0.12, h * 0.14), d * 0.90),
-    new THREE.MeshStandardMaterial({
-      color: 0x1a4488, emissive: 0x0033cc, emissiveIntensity: 0.30,
-      roughness: 0.20, metalness: 0.0, transparent: true, opacity: 0.82
-    })
-  );
-  under.position.y = -(h * 0.36);
-  g.add(under);
+  const vh = h * 2.5;
+  const r = Math.min(w, vh, d) * 0.5;
+  const geo = new RoundedBoxGeometry(w, vh, d, 5, r);
+  // Snow top wrapping to cool blue underside/lower sides — steeper blend
+  _iceVertexColors(geo, vh, new THREE.Color(0xeef4f8), new THREE.Color(0x4488bb), 1.8, 1.5);
+  const topMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+  const body = new THREE.Mesh(geo, topMat);
+  body.position.y = -(vh - h) * 0.5;
+  g.add(body);
   return { group: g, topMat };
+}
+
+// Bake vertex colors with position gradient + normal-based shading for Level 8 platforms.
+// Uses MeshBasicMaterial so colors render regardless of dim scene lighting.
+// Boost >1 compensates for renderer ACES tone mapping that compresses 1.0 → ~0.8.
+function _iceVertexColors(geo, vh, topCol, bottomCol, blendPow, wrapMul) {
+  const pos = geo.attributes.position;
+  const nrm = geo.attributes.normal;
+  const colors = new Float32Array(pos.count * 3);
+  const tmp = new THREE.Color();
+  const boost = 2.8;
+  for (let i = 0; i < pos.count; i++) {
+    const ny = (pos.getY(i) / (vh * 0.5) + 1.0) * 0.5;
+    const t = Math.pow(Math.min(1.0, ny * wrapMul), blendPow);
+    tmp.copy(bottomCol).lerp(topCol, t);
+    const shade = 0.68 + 0.32 * Math.max(0, nrm.getY(i));
+    tmp.r *= shade * boost;  tmp.g *= shade * boost;  tmp.b *= shade * boost;
+    colors[i * 3] = tmp.r;  colors[i * 3 + 1] = tmp.g;  colors[i * 3 + 2] = tmp.b;
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 }
 
 function buildSnowIceVisual(w, h, d) {
   const g = new THREE.Group();
-  // Near-white matte base — bright compacted snow, flatShading for soft faceted look
-  const baseMat = new THREE.MeshStandardMaterial({
-    color: 0xf1f7fa, emissive: 0xe8f4ff, emissiveIntensity: 3.0,
-    roughness: 0.88, metalness: 0.0, transparent: true, opacity: 0.96, flatShading: true
-  });
-  const base = new THREE.Mesh(new RoundedBoxGeometry(w, h * 0.92, d, 2, 0.10), baseMat);
-  base.position.y = -h * 0.04;
-  g.add(base);
-  const glow = iceEdgeGlow(w, h * 0.92, d);
-  glow.position.y = base.position.y;
-  g.add(glow);
-  // Top plate — near-white, subtle cool glow under the snow cap
-  const topMat = new THREE.MeshStandardMaterial({
-    color: 0xf4f8fb, emissive: 0xe8f4ff, emissiveIntensity: 3.0,
-    roughness: 0.05, metalness: 0.0, transparent: true, opacity: 0.88
-  });
-  const top = new THREE.Mesh(
-    new THREE.BoxGeometry(w * 0.94, Math.max(0.18, h * 0.20), d * 0.94), topMat
-  );
-  top.position.y = h * 0.35;
-  g.add(top);
-  // Edge rail
-  const rail = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.BoxGeometry(w * 0.94 + 0.02, Math.max(0.18, h * 0.20) + 0.02, d * 0.94 + 0.02)),
-    new THREE.LineBasicMaterial({ color: 0x9ff8ff, transparent: true, opacity: 0.35, depthWrite: false })
-  );
-  rail.position.y = top.position.y;
-  g.add(rail);
-  // Soft underside tint
-  const under = new THREE.Mesh(
-    new THREE.BoxGeometry(w * 0.90, Math.max(0.08, h * 0.08), d * 0.90),
-    new THREE.MeshStandardMaterial({
-      color: 0xb8ddea, emissive: 0x66dfff, emissiveIntensity: 0.03,
-      roughness: 0.18, metalness: 0.0, transparent: true, opacity: 0.55
-    })
-  );
-  under.position.y = -h * 0.18;
-  g.add(under);
-  // Snow cap — rounded, varied per platform; wider than top plate for natural overhang
-  const topPlateTopY = h * 0.35 + Math.max(0.18, h * 0.20) * 0.5;
-  const sw = w * (0.97 + Math.random() * 0.06);
-  const sd = d * (0.97 + Math.random() * 0.06);
-  const sh = 0.15 + Math.random() * 0.07;
-  const snowTints = [0xffffff, 0xf8faff, 0xf5f8ff, 0xfafbff];
-  const snowCol   = snowTints[Math.floor(Math.random() * snowTints.length)];
-  const snow = new THREE.Mesh(
-    new RoundedBoxGeometry(sw, sh, sd, 3, sh * 0.35),
-    new THREE.MeshStandardMaterial({
-      color: snowCol, emissive: 0xe8f4ff, emissiveIntensity: 3.0, roughness: 0.98, metalness: 0.0, flatShading: true
-    })
-  );
-  snow.position.y = topPlateTopY + sh * 0.5;
-  g.add(snow);
+  const vh = h * 2.5;
+  const r = Math.min(w, vh, d) * 0.5;
+  const geo = new RoundedBoxGeometry(w, vh, d, 5, r);
+  _iceVertexColors(geo, vh, new THREE.Color(0xffffff), new THREE.Color(0xc4dfe8), 0.6, 1.3);
+  const topMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+  const body = new THREE.Mesh(geo, topMat);
+  body.position.y = -(vh - h) * 0.5;
+  g.add(body);
   return { group: g, topMat };
 }
 
