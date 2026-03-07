@@ -1496,7 +1496,11 @@ function clearStormBackground() {
   if (stormRainMesh)   { scene.remove(stormRainMesh);   stormRainMesh   = null; stormRainData = []; }
   if (stormWindStreaks) { scene.remove(stormWindStreaks); stormWindStreaks = null; stormWindData = []; }
   if (stormFlashLight) { scene.remove(stormFlashLight);  stormFlashLight = null; }
-  for (const lb of stormLightning) scene.remove(lb.mesh);
+  for (const lb of stormLightning) {
+    scene.remove(lb.mesh);
+    lb.mesh.geometry.dispose();
+    lb.mesh.material.dispose();
+  }
   stormLightning  = [];
   stormFlashTimer = 0;
   stormBoltTimer  = 3.0;
@@ -1688,7 +1692,7 @@ function updateVolcano(dt) {
 }
 
 // ===== City updater (Level 7) =====
-function updateCity(dt) {
+function updateCity(dt, countdown) {
   // Animate rain streaks — fall down, wrap back to top
   if (rainPositions && rainMesh) {
     const fallSpeed = 28;
@@ -1720,22 +1724,24 @@ function updateCity(dt) {
     if (c.dir > 0 && c.group.position.z > c.wrapMax) c.group.position.z = c.wrapMin;
   }
 
-  // Wind gust timer
-  windTimer -= dt;
-  if (!windActive) {
-    if (windTimer <= 0) {
-      // Start a new gust
-      windActive  = true;
-      windForceX  = (Math.random() < 0.5 ? 1 : -1) * (4.0 + Math.random() * 3.0);
-      windGustDur = 1.8 + Math.random() * 1.4;
-      windTimer   = windGustDur;
-    }
-  } else {
-    if (windTimer <= 0) {
-      // Gust ends, pause before next
-      windActive = false;
-      windForceX = 0;
-      windTimer  = nextGust + Math.random() * 3.0;
+  // Wind gust timer — frozen during countdown
+  if (!countdown) {
+    windTimer -= dt;
+    if (!windActive) {
+      if (windTimer <= 0) {
+        // Start a new gust
+        windActive  = true;
+        windForceX  = (Math.random() < 0.5 ? 1 : -1) * (4.0 + Math.random() * 3.0);
+        windGustDur = 1.8 + Math.random() * 1.4;
+        windTimer   = windGustDur;
+      }
+    } else {
+      if (windTimer <= 0) {
+        // Gust ends, pause before next
+        windActive = false;
+        windForceX = 0;
+        windTimer  = nextGust + Math.random() * 3.0;
+      }
     }
   }
 }
@@ -4014,6 +4020,7 @@ function loadLevel(n) {
   // Defaults restored every level switch
   ambientLight.intensity = 1.1; ambientLight.color.setHex(0xffffff);
   skyFill.intensity      = 0.4;
+  skyFill.color.setHex(0x9cc8f0);     // restore default color (Level 9 changes it)
   skyFill.position.set(0, 20, -60);   // restore default position (Level 8 moves it)
   sunLight.color.setHex(0xfff8e0); sunLight.intensity = 1.6;  // restore warm sun (Level 8 recolors/moves it)
   sunLight.position.set(sunVec.x * 100, sunVec.y * 100, sunVec.z * 100);
@@ -4087,7 +4094,7 @@ function loadLevel(n) {
     scene.fog        = new THREE.Fog(0x050810, 50, 180);
     gravity          = -26;
     ambientLight.intensity = 0.28; ambientLight.color.setHex(0x112233);
-    skyFill.color.setHex(0x9cc8f0); // reset to default
+    // skyFill.color reset handled in defaults block
     skyFill.intensity = 0;
     renderer.toneMappingExposure = 0.54;
     clouds.forEach(c => c.visible = false);
@@ -4858,7 +4865,15 @@ function updateShadow() {
   const px = player.position.x, pz = player.position.z;
   const feet = player.position.y - playerHalf.y;
   let bestTop = -9999;
-  for (const p of solids.concat(movers)) {
+  for (let i = 0; i < solids.length; i++) {
+    const p = solids[i];
+    if (Math.abs(px - p.mesh.position.x) > p.w / 2 + 0.5) continue;
+    if (Math.abs(pz - p.mesh.position.z) > p.d / 2 + 0.5) continue;
+    const top = p.mesh.position.y + p.h / 2;
+    if (top < feet + 0.3 && top > bestTop) bestTop = top;
+  }
+  for (let i = 0; i < movers.length; i++) {
+    const p = movers[i];
     if (Math.abs(px - p.mesh.position.x) > p.w / 2 + 0.5) continue;
     if (Math.abs(pz - p.mesh.position.z) > p.d / 2 + 0.5) continue;
     const top = p.mesh.position.y + p.h / 2;
@@ -5391,15 +5406,18 @@ function pulseStormStatics() {
   }
 }
 
-function updateStorm(dt) {
-  // ── Lightning bolt timer ──
-  stormBoltTimer -= dt;
-  if (stormBoltTimer <= 0) {
-    // Pick random strike location near platforms
-    const targetX = (Math.random() - 0.5) * 40;
-    const targetZ = -10 - Math.random() * 165;
-    spawnLightningBolt(targetX, targetZ);
-    stormBoltTimer = 3.0 + Math.random() * 4.0; // next in 3-7s
+function updateStorm(dt, countdown) {
+  // During countdown, skip lightning, electric timers, phase cycling, and wind
+  if (!countdown) {
+    // ── Lightning bolt timer ──
+    stormBoltTimer -= dt;
+    if (stormBoltTimer <= 0) {
+      // Pick random strike location near platforms
+      const targetX = (Math.random() - 0.5) * 40;
+      const targetZ = -10 - Math.random() * 165;
+      spawnLightningBolt(targetX, targetZ);
+      stormBoltTimer = 3.0 + Math.random() * 4.0; // next in 3-7s
+    }
   }
 
   // ── Fade active lightning bolts ──
@@ -5426,18 +5444,21 @@ function updateStorm(dt) {
     ambientLight.intensity = 0.55;
   }
 
-  // ── Electric platform timers ──
-  for (const ep of stormElecPlats) {
-    if (ep.electrified) {
-      ep.elecTimer -= dt;
-      if (ep.elecTimer <= 0) {
-        ep.electrified = false;
-        ep.elecTimer   = 0;
+  if (!countdown) {
+    // ── Electric platform timers ──
+    for (const ep of stormElecPlats) {
+      if (ep.electrified) {
+        ep.elecTimer -= dt;
+        if (ep.elecTimer <= 0) {
+          ep.electrified = false;
+          ep.elecTimer   = 0;
+        }
       }
     }
   }
 
-  // ── Phase platforms cycle ──
+  // ── Phase platforms cycle (frozen during countdown) ──
+  if (countdown) return;
   for (const pp of stormPhasePlats) {
     pp.phaseTimer += dt;
     if (pp.phaseTimer >= pp.phaseCycle) pp.phaseTimer -= pp.phaseCycle;
@@ -5574,9 +5595,9 @@ function animate() {
   if (currentLevel === 3) { updateMeteors(dt); }
   if (currentLevel === 4) { updateVolcano(dt); updateGeysers(); }
   if (currentLevel === 5) { updateCave(dt); }
-  if (currentLevel === 7) { updateCity(dt); }
+  if (currentLevel === 7) { updateCity(dt, countdownActive); }
   if (currentLevel === 8) { updateIce(dt); }
-  if (currentLevel === 9) { updateStorm(dt); }
+  if (currentLevel === 9) { updateStorm(dt, countdownActive); }
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
 }
