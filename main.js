@@ -562,7 +562,7 @@ function rampPlatform({ x, y, z, w, d, angleDeg = 18, yawDeg = 0, thickness = 0.
   col.updateMatrixWorld(true);
   const normal = new THREE.Vector3(0, 1, 0).applyQuaternion(col.quaternion).normalize();
   const point  = col.position.clone();
-  ramps.push({ type: "ramp", mesh: col, w, d, thickness, normal, point });
+  ramps.push({ type: "ramp", mesh: col, w, d, thickness, normal, point, topMat: null, baseEI: 0 });
   return col;
 }
 
@@ -1503,7 +1503,7 @@ function clearStormBackground() {
   stormPhasePlats = [];
   stormElecPlats  = [];
   stormCloudPlanes = [];
-  windActive = false; windForceX = 0; windTimer = 0; windGustDur = 0;
+  windActive = false; windForceX = 0; windTimer = 0; windGustDur = 0; nextGust = 5.0;
 }
 
 function buildStormBackground() {
@@ -3467,6 +3467,10 @@ function buildIceBackground() {
   iceGroup = new THREE.Group();
   scene.add(iceGroup);
 
+  // Seeded LCG for deterministic placement
+  let _s = 8888;
+  function rng() { _s = (_s * 1664525 + 1013904223) & 0xFFFFFFFF; return (_s >>> 0) / 0xFFFFFFFF; }
+
   // Aurora — canvas texture with RepeatWrapping so UV scroll works in updateIce
   auroraMats = [];
   function addAurora(y, z, w, h, rStr, gStr, bStr, opacity, speed) {
@@ -3482,7 +3486,7 @@ function buildIceBackground() {
     actx.strokeStyle = "rgba(255,255,255,0.06)";
     actx.lineWidth   = 2;
     for (let i = 0; i < 6; i++) {
-      const sx = Math.random() * 512;
+      const sx = rng() * 512;
       actx.beginPath(); actx.moveTo(sx, 0); actx.lineTo(sx + 20, 64); actx.stroke();
     }
     const tex = new THREE.CanvasTexture(ac);
@@ -3573,8 +3577,8 @@ function buildIceBackground() {
       const ring  = [];
       for (let j = 0; j < segs; j++) {
         const angle = (j / segs) * Math.PI * 2;
-        const rJit  = baseR * (1.0 + (Math.random() - 0.5) * 0.20);
-        const yJit  = baseY + (Math.random() - 0.5) * 0.16 * bandH;
+        const rJit  = baseR * (1.0 + (rng() - 0.5) * 0.20);
+        const yJit  = baseY + (rng() - 0.5) * 0.16 * bandH;
         ring.push({ x: Math.cos(angle) * rJit, y: yJit, z: Math.sin(angle) * rJit });
       }
       rings.push(ring);
@@ -3664,11 +3668,11 @@ function buildIceBackground() {
   ];
   for (const cl of shardClusters) {
     for (let i = 0; i < cl.count; i++) {
-      const col  = shardColors[Math.floor(Math.random() * shardColors.length)];
-      const size = 0.5 + Math.random() * 0.8;
-      const ox   = (Math.random() - 0.5) * 6;
-      const oy   = Math.random() * 2;
-      const oz   = (Math.random() - 0.5) * 6;
+      const col  = shardColors[Math.floor(rng() * shardColors.length)];
+      const size = 0.5 + rng() * 0.8;
+      const ox   = (rng() - 0.5) * 6;
+      const oy   = rng() * 2;
+      const oz   = (rng() - 0.5) * 6;
       const shard = new THREE.Mesh(
         new THREE.OctahedronGeometry(size, 0),
         new THREE.MeshStandardMaterial({
@@ -3677,7 +3681,7 @@ function buildIceBackground() {
         })
       );
       shard.position.set(cl.cx + ox, cl.cy + oy, cl.cz + oz);
-      shard.rotation.set(Math.random(), Math.random() * Math.PI, Math.random());
+      shard.rotation.set(rng(), rng() * Math.PI, rng());
       iceGroup.add(shard);
       shard.add(new THREE.LineSegments(
         new THREE.EdgesGeometry(new THREE.OctahedronGeometry(size, 0)),
@@ -3702,12 +3706,12 @@ function buildIceBackground() {
   snowData = [];
   for (let i = 0; i < SNOW_COUNT; i++) {
     snowData.push({
-      x:     (Math.random() - 0.5) * 200,
-      y:     Math.random() * 80,
-      z:     -Math.random() * 200,
-      speed: 2.2 + Math.random() * 2.0,
-      drift: (Math.random() - 0.5) * 0.5,
-      phase: Math.random() * Math.PI * 2,
+      x:     (rng() - 0.5) * 200,
+      y:     rng() * 80,
+      z:     -rng() * 200,
+      speed: 2.2 + rng() * 2.0,
+      drift: (rng() - 0.5) * 0.5,
+      phase: rng() * Math.PI * 2,
     });
   }
   const snowSphereGeo = new THREE.SphereGeometry(0.08, 5, 4);
@@ -3727,8 +3731,8 @@ function buildIceBackground() {
     const cc = document.createElement("canvas"); cc.width = 512; cc.height = 512;
     const cctx = cc.getContext("2d");
     for (let i = 0; i < blobCount; i++) {
-      const cx2 = Math.random() * 512, cy2 = Math.random() * 512;
-      const r2  = (blobMaxR * 0.3) + Math.random() * (blobMaxR * 0.7);
+      const cx2 = rng() * 512, cy2 = rng() * 512;
+      const r2  = (blobMaxR * 0.3) + rng() * (blobMaxR * 0.7);
       const g2  = cctx.createRadialGradient(cx2, cy2, 0, cx2, cy2, r2);
       g2.addColorStop(0, "rgba(255,255,255,0.65)");
       g2.addColorStop(1, "rgba(255,255,255,0)");
@@ -4702,6 +4706,7 @@ const _tmpLookAt = new THREE.Vector3();
 const _tmpRampP  = new THREE.Vector3();
 const _tmpRampInv = new THREE.Matrix4();
 const _tmpRingHalf = new THREE.Vector3(1.3, 1.3, 1.3);
+const _allBoxes = [];   // reusable combined solids+movers array, rebuilt each frame
 
 function aabbOverlap(aPos, aHalf, bPos, bHalf) {
   return (
@@ -5024,8 +5029,6 @@ function update(dt) {
     bodyRef.rotation.x = THREE.MathUtils.lerp(bodyRef.rotation.x, targetLean, 1 - Math.pow(0.02, dt));
   }
 
-  player.rotation.y = yaw;
-
   // ── Jump — stretch on launch ──
   if (keys.has("Space") && grounded) {
     vel.y    = jumpSpeed;
@@ -5045,7 +5048,10 @@ function update(dt) {
   player.position.y += vel.y * dt;
   grounded = false; groundObject = null;
 
-  const allBoxes = solids.concat(movers);
+  _allBoxes.length = 0;
+  for (let i = 0; i < solids.length; i++) _allBoxes.push(solids[i]);
+  for (let i = 0; i < movers.length; i++) _allBoxes.push(movers[i]);
+  const allBoxes = _allBoxes;
   for (const p of allBoxes) {
     if (p.stormType === "phase" && !p.phaseVisible) continue; // invisible phase platform
     const pHalf = _tmpHalf.set(p.w / 2, p.h / 2, p.d / 2);
@@ -5173,7 +5179,7 @@ function update(dt) {
   }
 
   // ── Fall reset / ground crash / space death ──
-  if (currentLevel === 2 && player.position.y - playerHalf.y <= -22) {
+  if (currentLevel === 2 && !crashed && player.position.y - playerHalf.y <= -22) {
     triggerCrash(-22);
   }
   if (currentLevel === 4 && !crashed && player.position.y - playerHalf.y <= -15) {
