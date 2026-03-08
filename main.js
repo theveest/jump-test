@@ -148,6 +148,18 @@ let stormBaseBackground = null; // scene.background clone for flash lerp
 const STORM_RAIN_COUNT  = 800;
 const STORM_WIND_COUNT  = 100;
 const stormRainDummy = new THREE.Object3D();
+let stormDistantClouds  = [];   // distant storm silhouettes with silent lightning
+let stormWindWisps      = [];   // wind gust wisp particles
+let stormWispGeo        = null;
+let stormWispTexture    = null;
+let stormSparkPool      = [];   // electric spark particle pool
+let stormSparkGeo       = null;
+const STORM_SPARK_COUNT = 30;
+let stormRainIntensity  = 0;    // 0=normal, 1=heavy burst
+let stormRainCycleTimer = 0;    // 10s cycle timer
+let stormRainPhase      = "normal";
+let stormHazePlanes     = [];   // atmospheric haze planes
+let stormDebrisData     = [];   // enhanced debris tracking
 
 // Per-level platform material personality — set in loadLevel before building
 let levelMat = { roughness: 0.55, metalness: 0.05, emissive: 0x000000, emissiveInt: 0.0, edgeColor: 0x000000, edgeOpacity: 0.20 };
@@ -1489,6 +1501,17 @@ function clearStormBackground() {
   stormCeilingLayers = [];
   stormWallClouds    = [];
   stormBaseBackground = null;
+  stormDistantClouds = [];
+  stormHazePlanes    = [];
+  stormDebrisData    = [];
+  for (const w of stormWindWisps) { scene.remove(w.mesh); w.mat.dispose(); }
+  stormWindWisps = [];
+  if (stormWispGeo) { stormWispGeo.dispose(); stormWispGeo = null; }
+  if (stormWispTexture) { stormWispTexture.dispose(); stormWispTexture = null; }
+  for (const sp of stormSparkPool) { scene.remove(sp.mesh); sp.mat.dispose(); }
+  stormSparkPool = [];
+  if (stormSparkGeo) { stormSparkGeo.dispose(); stormSparkGeo = null; }
+  stormRainIntensity = 0; stormRainCycleTimer = 0; stormRainPhase = "normal";
   windActive = false; windForceX = 0; windTimer = 0; windGustDur = 0; nextGust = 5.0;
 }
 
@@ -1646,16 +1669,66 @@ function buildStormBackground() {
     scene.add(stormWindStreaks);
   }
 
+  // ── Wind wisp particles (visible during gusts) ──
+  {
+    const wc = document.createElement("canvas"); wc.width = 128; wc.height = 32;
+    const wctx = wc.getContext("2d");
+    const wGrad = wctx.createLinearGradient(0, 16, 128, 16);
+    wGrad.addColorStop(0,   "rgba(136,170,204,0)");
+    wGrad.addColorStop(0.15,"rgba(160,190,215,0.35)");
+    wGrad.addColorStop(0.5, "rgba(180,200,220,0.55)");
+    wGrad.addColorStop(0.85,"rgba(160,190,215,0.35)");
+    wGrad.addColorStop(1,   "rgba(136,170,204,0)");
+    wctx.fillStyle = wGrad;
+    wctx.fillRect(0, 0, 128, 32);
+    stormWispTexture = new THREE.CanvasTexture(wc);
+    stormWispGeo = new THREE.PlaneGeometry(4.0, 0.3);
+    stormWindWisps = [];
+    for (let i = 0; i < 18; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        map: stormWispTexture, transparent: true, opacity: 0,
+        depthWrite: false, side: THREE.DoubleSide, fog: false
+      });
+      const mesh = new THREE.Mesh(stormWispGeo, mat);
+      mesh.visible = false;
+      scene.add(mesh);
+      stormWindWisps.push({
+        mesh, mat, x: 0, y: 0, z: 0,
+        speed: 25 + Math.random() * 20,
+        life: 0, maxLife: 1.5 + Math.random() * 1.5,
+        active: false, scale: 0.7 + Math.random() * 0.8
+      });
+    }
+  }
+
+  // ── Electric spark particle pool ──
+  {
+    stormSparkGeo = new THREE.SphereGeometry(0.06, 4, 3);
+    stormSparkPool = [];
+    for (let i = 0; i < STORM_SPARK_COUNT; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xddf0ff, transparent: true, opacity: 0, depthWrite: false
+      });
+      const mesh = new THREE.Mesh(stormSparkGeo, mat);
+      mesh.visible = false;
+      scene.add(mesh);
+      stormSparkPool.push({ mesh, mat, life: 0, maxLife: 0.3, vx: 0, vy: 0, vz: 0, active: false });
+    }
+  }
+
   // ── Storm flash light (reusable, starts at 0 intensity) ──
   stormFlashLight = new THREE.DirectionalLight(0x9fd8ff, 0);
   stormFlashLight.position.set(0, 60, -40);
   scene.add(stormFlashLight);
 
-  // ── Distant floating debris ──
-  for (let i = 0; i < 8; i++) {
-    const dw = 0.6 + Math.random() * 1.2;
-    const dh = 0.3 + Math.random() * 0.4;
-    const dd = 0.6 + Math.random() * 1.0;
+  // ── Enhanced storm debris — wind-responsive, varied sizes ──
+  stormDebrisData = [];
+  for (let i = 0; i < 18; i++) {
+    const isFlying = i < 3;
+    const sizeMult = isFlying ? 0.4 + Math.random() * 0.4 : 0.5 + Math.random() * 1.5;
+    const dw = (0.5 + Math.random() * 0.8) * sizeMult;
+    const dh = (0.2 + Math.random() * 0.3) * sizeMult;
+    const dd = (0.5 + Math.random() * 0.7) * sizeMult;
     const debris = new THREE.Mesh(
       new THREE.BoxGeometry(dw, dh, dd),
       new THREE.MeshStandardMaterial({
@@ -1663,9 +1736,16 @@ function buildStormBackground() {
         roughness: 0.7, metalness: 0.3
       })
     );
-    debris.position.set((Math.random() - 0.5) * 120, -8 + Math.random() * 5, -20 - Math.random() * 150);
+    const baseY = isFlying ? (5 + Math.random() * 15) : (-8 + Math.random() * 5);
+    debris.position.set((Math.random() - 0.5) * 120, baseY, -20 - Math.random() * 150);
     debris.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
     stormGroup.add(debris);
+    stormDebrisData.push({
+      mesh: debris, baseY,
+      spinSpeed: 0.3 + Math.random() * 0.7,
+      driftSpeed: isFlying ? (15 + Math.random() * 10) : (0.5 + Math.random() * 1.0),
+      isFlying, phase: Math.random() * Math.PI * 2
+    });
   }
 
   // ── Distant storm wall masses — fill the periphery ──
@@ -1707,6 +1787,75 @@ function buildStormBackground() {
   addStormWall( 80, -85, 15, -Math.PI * 0.15, 300, 70, 0.55, 2233);
   addStormWall(  0, -250, 15, 0, 350, 80, 0.45, 3349);
   addStormWall(  0,  40, 15, Math.PI, 300, 60, 0.40, 4461);
+
+  // ── Distant storm silhouettes — extreme depth beyond walls ──
+  {
+    const distCfgs = [
+      { x: -150, z: -420, y: 20, rotY:  0.15, w: 650, h: 140, op: 0.14, seed: 11001, flash: true  },
+      { x:  130, z: -480, y: 25, rotY: -0.10, w: 750, h: 120, op: 0.12, seed: 12002, flash: true  },
+      { x:    0, z: -500, y: 18, rotY:  0,    w: 800, h: 150, op: 0.16, seed: 13003, flash: true  },
+      { x:  -80, z: -350, y: 30, rotY:  0.08, w: 550, h: 110, op: 0.18, seed: 14004, flash: false },
+    ];
+    for (const cfg of distCfgs) {
+      const cv = document.createElement("canvas"); cv.width = 512; cv.height = 256;
+      const ctx = cv.getContext("2d");
+      const grad = ctx.createLinearGradient(0, 0, 0, 256);
+      grad.addColorStop(0,   "rgba(8,14,24,0.0)");
+      grad.addColorStop(0.15,"rgba(10,18,30,0.6)");
+      grad.addColorStop(0.5, "rgba(12,20,35,0.8)");
+      grad.addColorStop(0.85,"rgba(10,18,30,0.6)");
+      grad.addColorStop(1,   "rgba(8,14,24,0.0)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 512, 256);
+      let _s = cfg.seed;
+      const dr = () => { _s = (_s * 16807) % 2147483647; return (_s - 1) / 2147483646; };
+      for (let i = 0; i < 35; i++) {
+        const cx = dr() * 512, cy = dr() * 256, r = 40 + dr() * 100;
+        const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        rg.addColorStop(0, `rgba(18,30,50,${(0.3 + dr() * 0.2).toFixed(2)})`);
+        rg.addColorStop(1, "rgba(10,18,30,0)");
+        ctx.fillStyle = rg;
+        ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+      }
+      const tex = new THREE.CanvasTexture(cv);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(2, 1);
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex, transparent: true, opacity: cfg.op,
+        depthWrite: false, side: THREE.DoubleSide, fog: false
+      });
+      const plane = new THREE.Mesh(new THREE.PlaneGeometry(cfg.w, cfg.h), mat);
+      plane.position.set(cfg.x, cfg.y, cfg.z);
+      plane.rotation.y = cfg.rotY;
+      stormGroup.add(plane);
+      stormDistantClouds.push({
+        mesh: plane, mat, baseOpacity: cfg.op,
+        hasFlash: cfg.flash, flashDur: 0,
+        nextFlash: 5 + Math.random() * 10
+      });
+    }
+  }
+
+  // ── Platform-level atmospheric haze ──
+  {
+    const hazeConfigs = [
+      { y: 3,  opacity: 0.10, size: 600, color: 0x0d1a2e },
+      { y: 1,  opacity: 0.07, size: 700, color: 0x0a1525 },
+    ];
+    stormHazePlanes = [];
+    for (const hc of hazeConfigs) {
+      const hMat = new THREE.MeshBasicMaterial({
+        color: hc.color, transparent: true, opacity: hc.opacity,
+        depthWrite: false, side: THREE.DoubleSide, fog: false
+      });
+      const hMesh = new THREE.Mesh(new THREE.PlaneGeometry(hc.size, hc.size), hMat);
+      hMesh.rotation.x = -Math.PI / 2;
+      hMesh.position.set(0, hc.y, -85);
+      hMesh.renderOrder = 2;
+      stormGroup.add(hMesh);
+      stormHazePlanes.push({ mesh: hMesh, mat: hMat, baseOpacity: hc.opacity });
+    }
+  }
 
   // ── Store base state for lightning flash lerp ──
   stormBaseBackground = scene.background.clone();
@@ -5518,6 +5667,13 @@ function pulseStormStatics() {
 }
 
 function updateStorm(dt, countdown) {
+  // ── Rain intensity cycle (always runs) ──
+  stormRainCycleTimer += dt;
+  if (stormRainCycleTimer >= 10.0) stormRainCycleTimer -= 10.0;
+  stormRainPhase = stormRainCycleTimer < 7.0 ? "normal" : "heavy";
+  const targetRI = stormRainPhase === "heavy" ? 1.0 : 0.0;
+  stormRainIntensity += (targetRI - stormRainIntensity) * Math.min(1, dt * 1.5);
+
   // During countdown, skip lightning, electric timers, phase cycling, and wind
   if (!countdown) {
     // ── Lightning bolt timer ──
@@ -5591,6 +5747,45 @@ function updateStorm(dt, countdown) {
         }
       }
     }
+
+    // ── Electric spark effects on electrified platforms ──
+    for (const ep of stormElecPlats) {
+      if (ep.electrified && Math.random() < 0.30) {
+        const sp = stormSparkPool.find(s => !s.active);
+        if (sp) {
+          const hw = ep.w * 0.5, hd = ep.d * 0.5;
+          const edge = Math.floor(Math.random() * 4);
+          let sx, sz;
+          if (edge === 0)      { sx = -hw + Math.random() * ep.w; sz = -hd; }
+          else if (edge === 1) { sx = -hw + Math.random() * ep.w; sz =  hd; }
+          else if (edge === 2) { sx = -hw; sz = -hd + Math.random() * ep.d; }
+          else                 { sx =  hw; sz = -hd + Math.random() * ep.d; }
+          sp.mesh.position.set(
+            ep.mesh.position.x + sx,
+            ep.mesh.position.y + ep.h * 0.5 + 0.1,
+            ep.mesh.position.z + sz
+          );
+          sp.vx = (Math.random() - 0.5) * 6;
+          sp.vy = 2 + Math.random() * 4;
+          sp.vz = (Math.random() - 0.5) * 6;
+          sp.life = sp.maxLife = 0.3 + Math.random() * 0.2;
+          sp.active = true;
+          sp.mesh.visible = true;
+          sp.mat.opacity = 1.0;
+        }
+      }
+    }
+  }
+  // ── Update active sparks ──
+  for (const sp of stormSparkPool) {
+    if (!sp.active) continue;
+    sp.life -= dt;
+    sp.mesh.position.x += sp.vx * dt;
+    sp.mesh.position.y += sp.vy * dt;
+    sp.mesh.position.z += sp.vz * dt;
+    sp.vy -= 12 * dt; // gravity
+    sp.mat.opacity = Math.max(0, sp.life / sp.maxLife);
+    if (sp.life <= 0) { sp.active = false; sp.mesh.visible = false; }
   }
 
   // ── Phase platforms cycle (frozen during countdown) ──
@@ -5658,10 +5853,11 @@ function updateStorm(dt, countdown) {
   // ── Rain animation ──
   if (stormRainMesh && stormRainData.length) {
     const pz = player.position.z;
-    const windDrift = windActive ? windForceX * 0.4 : 0;
+    const windDrift = windActive ? windForceX * 0.6 : 0;
+    const rainTilt = windActive ? -windForceX * 0.08 : 0;
     for (let i = 0; i < STORM_RAIN_COUNT; i++) {
       const drop = stormRainData[i];
-      drop.y -= drop.speed * dt;
+      drop.y -= drop.speed * (1.0 + stormRainIntensity * 0.2) * dt;
       drop.x += (drop.drift + windDrift) * dt;
       if (drop.y < -15) {
         drop.y = 40 + Math.random() * 10;
@@ -5674,10 +5870,14 @@ function updateStorm(dt, countdown) {
         drop.y = 25 + Math.random() * 20;
       }
       stormRainDummy.position.set(drop.x, drop.y, drop.z);
+      stormRainDummy.rotation.set(0, 0, rainTilt);
       stormRainDummy.updateMatrix();
       stormRainMesh.setMatrixAt(i, stormRainDummy.matrix);
     }
     stormRainMesh.instanceMatrix.needsUpdate = true;
+    // Rain intensity modulation
+    stormRainMesh.material.opacity = 0.65 + stormRainIntensity * 0.15;
+    stormRainMesh.material.color.setHex(stormRainIntensity > 0.5 ? 0xccddff : 0xbbccee);
   }
 
   // ── Wind streak animation ──
@@ -5701,6 +5901,44 @@ function updateStorm(dt, countdown) {
     stormWindStreaks.geometry.attributes.position.needsUpdate = true;
   }
 
+  // ── Wind wisp animation ──
+  {
+    const pz = player.position.z;
+    const wDir = windActive ? Math.sign(windForceX) : 0;
+    // Spawn new wisps during gusts
+    if (windActive) {
+      for (const wp of stormWindWisps) {
+        if (wp.active) continue;
+        if (Math.random() < 0.03) { // ~2 spawns/sec at 60fps
+          wp.active = true;
+          wp.life = wp.maxLife;
+          wp.x = -wDir * 60;
+          wp.y = 2 + Math.random() * 18;
+          wp.z = pz - 5 - Math.random() * 140;
+          wp.mesh.visible = true;
+          wp.mesh.scale.set(wp.scale, wp.scale, wp.scale);
+          break; // one spawn per frame
+        }
+      }
+    }
+    // Update active wisps
+    for (const wp of stormWindWisps) {
+      if (!wp.active) continue;
+      wp.life -= dt;
+      wp.x += wDir * wp.speed * dt;
+      wp.mesh.position.set(wp.x, wp.y, wp.z);
+      const t = 1 - wp.life / wp.maxLife; // 0→1
+      const fadeIn = Math.min(1, t / 0.2);
+      const fadeOut = Math.min(1, (1 - t) / 0.2);
+      wp.mat.opacity = 0.45 * fadeIn * fadeOut;
+      if (wp.life <= 0 || Math.abs(wp.x) > 80) {
+        wp.active = false;
+        wp.mesh.visible = false;
+        wp.mat.opacity = 0;
+      }
+    }
+  }
+
   // ── Animate rolling storm cloud layers (UV scroll + position oscillation) ──
   for (const cp of stormCloudPlanes) {
     if (cp.mat.map) cp.mat.map.offset.x -= cp.uvSpeed * dt;
@@ -5721,14 +5959,58 @@ function updateStorm(dt, countdown) {
     if (sw.mat.map) sw.mat.map.offset.x -= sw.uvSpeed * dt;
   }
 
-  // ── Floating debris gentle bob ──
-  if (stormGroup) {
-    stormGroup.children.forEach((child, idx) => {
-      if (child.geometry && child.geometry.type === "BoxGeometry" && child.position.y < 0) {
-        child.position.y += Math.sin(time * 0.5 + idx * 1.3) * 0.003;
-        child.rotation.y += 0.002 * (idx % 2 === 0 ? 1 : -1);
+  // ── Distant cloud silent lightning flashes ──
+  for (const dc of stormDistantClouds) {
+    if (!dc.hasFlash) continue;
+    if (dc.flashDur > 0) {
+      dc.flashDur -= dt;
+      const pulse = Math.sin((dc.flashDur / 0.5) * Math.PI);
+      dc.mat.opacity = dc.baseOpacity + Math.max(0, pulse) * 0.28;
+      if (dc.flashDur <= 0) {
+        dc.mat.opacity = dc.baseOpacity;
+        dc.flashDur = 0;
+        dc.nextFlash = 5 + Math.random() * 10;
       }
-    });
+    } else {
+      dc.nextFlash -= dt;
+      if (dc.nextFlash <= 0) dc.flashDur = 0.5;
+    }
+  }
+
+  // ── Atmospheric haze drift ──
+  for (const hp of stormHazePlanes) {
+    hp.mesh.position.x = Math.sin(time * 0.03) * 8;
+    hp.mesh.position.z = -85 + Math.cos(time * 0.02) * 5;
+    hp.mat.opacity = hp.baseOpacity + stormRainIntensity * 0.03;
+  }
+
+  // ── Enhanced storm debris animation ──
+  for (const db of stormDebrisData) {
+    const m = db.mesh;
+    if (db.isFlying) {
+      const flyDir = windActive ? Math.sign(windForceX) : 1;
+      const flySpeed = windActive ? db.driftSpeed * 1.5 : db.driftSpeed;
+      m.position.x += flyDir * flySpeed * dt;
+      m.rotation.x += db.spinSpeed * 3 * dt;
+      m.rotation.z += db.spinSpeed * 2 * dt;
+      if (m.position.x > 90 || m.position.x < -90) {
+        m.position.x = -flyDir * 85;
+        m.position.y = 3 + Math.random() * 18;
+        m.position.z = player.position.z - 10 - Math.random() * 150;
+      }
+    } else {
+      m.position.y = db.baseY + Math.sin(time * 0.5 + db.phase) * 0.15;
+      m.rotation.y += db.spinSpeed * 0.004;
+      if (windActive) {
+        m.position.x += Math.sign(windForceX) * db.driftSpeed * dt;
+        m.rotation.x += db.spinSpeed * 0.5 * dt;
+        m.rotation.z += db.spinSpeed * 0.3 * dt;
+        if (Math.abs(m.position.x) > 80) {
+          m.position.x = -Math.sign(windForceX) * 75;
+          m.position.z = player.position.z - Math.random() * 150;
+        }
+      }
+    }
   }
 }
 
