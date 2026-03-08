@@ -1604,19 +1604,48 @@ function buildStormBackground() {
     { ...ceil2, baseX: 0, baseZ: -85, oscSpeed: 0.025, uvSpeed: 0.0012 },
   ];
 
-  // ── Rolling fog floor — multi-layer, lurking below platforms ──
-  const ff1 = makeStormCloud({ blobCount: 45, blobMaxR: 150, baseColor: 0x0d1a2e, blobColor: 0x162840,
-    colorHex: 0x0d1a2e, opacity: 0.45, yPos: -5, zOffset: -85, size: 900, segs: 36, waveAmp: 2.0, seed: 3317, repeatS: 3 });
-  const ff2 = makeStormCloud({ blobCount: 55, blobMaxR: 130, baseColor: 0x0a1525, blobColor: 0x121e35,
-    colorHex: 0x0a1525, opacity: 0.35, yPos: -10, zOffset: -85, size: 1000, segs: 30, waveAmp: 1.5, seed: 2209, repeatS: 4 });
-  const ff3 = makeStormCloud({ blobCount: 40, blobMaxR: 160, baseColor: 0x081220, blobColor: 0x0f1a2c,
-    colorHex: 0x081220, opacity: 0.25, yPos: -18, zOffset: -85, size: 1100, segs: 24, waveAmp: 1.2, seed: 6641, repeatS: 5 });
-
-  stormFogLayers = [
-    { ...ff1, baseX: 0, baseZ: -85, oscSpeed: 0.10, uvSpeed: 0.005 },
-    { ...ff2, baseX: 0, baseZ: -85, oscSpeed: 0.07, uvSpeed: 0.003 },
-    { ...ff3, baseX: 0, baseZ: -85, oscSpeed: 0.04, uvSpeed: 0.002 },
+  // ── Storm cloud ocean — deep, layered cloud system below platforms ──
+  // 6 layers create a thick volumetric storm cloud bank beneath the playable area.
+  // Each layer has different size, density, wave displacement, and drift speed
+  // to produce parallax depth. Wind pushes UV offset for living movement.
+  const fogCfgs = [
+    // Upper cloud tops — just below platform level, densest, brightest edges
+    { blobCount: 70, blobMaxR: 160, baseColor: 0x15263f, blobColor: 0x2b4f7a,
+      colorHex: 0x15263f, opacity: 0.60, yPos: -6,  size: 1200, segs: 48, waveAmp: 3.5, seed: 3317, repeatS: 3,
+      oscSpeed: 0.10, uvSpeed: 0.005, windMult: 0.20 },
+    // Upper-mid — slightly offset, still fairly bright
+    { blobCount: 60, blobMaxR: 140, baseColor: 0x122240, blobColor: 0x244468,
+      colorHex: 0x122240, opacity: 0.55, yPos: -10, size: 1400, segs: 44, waveAmp: 3.0, seed: 7823, repeatS: 4,
+      oscSpeed: 0.08, uvSpeed: 0.004, windMult: 0.30 },
+    // Mid layer — larger, slower, still visible
+    { blobCount: 55, blobMaxR: 170, baseColor: 0x0e1c34, blobColor: 0x1e3858,
+      colorHex: 0x0e1c34, opacity: 0.48, yPos: -15, size: 1600, segs: 40, waveAmp: 2.5, seed: 2209, repeatS: 5,
+      oscSpeed: 0.06, uvSpeed: 0.003, windMult: 0.35 },
+    // Deep mid — darkening toward abyss
+    { blobCount: 50, blobMaxR: 180, baseColor: 0x0b1628, blobColor: 0x162c48,
+      colorHex: 0x0b1628, opacity: 0.40, yPos: -22, size: 1800, segs: 36, waveAmp: 2.0, seed: 6641, repeatS: 6,
+      oscSpeed: 0.04, uvSpeed: 0.002, windMult: 0.25 },
+    // Deep layer — large, muted but still present
+    { blobCount: 45, blobMaxR: 190, baseColor: 0x081220, blobColor: 0x122438,
+      colorHex: 0x081220, opacity: 0.32, yPos: -30, size: 2000, segs: 32, waveAmp: 1.5, seed: 4455, repeatS: 7,
+      oscSpeed: 0.03, uvSpeed: 0.0015, windMult: 0.15 },
+    // Abyss layer — deepest, faintest, enormous
+    { blobCount: 35, blobMaxR: 200, baseColor: 0x060e1a, blobColor: 0x0e1c2e,
+      colorHex: 0x060e1a, opacity: 0.24, yPos: -40, size: 2200, segs: 28, waveAmp: 1.0, seed: 9912, repeatS: 8,
+      oscSpeed: 0.02, uvSpeed: 0.001, windMult: 0.10 },
   ];
+  stormFogLayers = [];
+  for (const fc of fogCfgs) {
+    const layer = makeStormCloud({
+      blobCount: fc.blobCount, blobMaxR: fc.blobMaxR, baseColor: fc.baseColor, blobColor: fc.blobColor,
+      colorHex: fc.colorHex, opacity: fc.opacity, yPos: fc.yPos, zOffset: -85,
+      size: fc.size, segs: fc.segs, waveAmp: fc.waveAmp, seed: fc.seed, repeatS: fc.repeatS
+    });
+    stormFogLayers.push({
+      ...layer, baseX: 0, baseZ: -85,
+      oscSpeed: fc.oscSpeed, uvSpeed: fc.uvSpeed, windMult: fc.windMult
+    });
+  }
 
   // ── Heavy rain system (InstancedMesh) — 800 drops ──
   {
@@ -5718,7 +5747,7 @@ function updateStorm(dt, countdown) {
       if (cl.mat && cl.mat._baseOpacity !== undefined) cl.mat.opacity = cl.mat._baseOpacity + 0.20 * t;
     }
     for (const fl of stormFogLayers) {
-      if (fl.mat && fl.mat._baseOpacity !== undefined) fl.mat.opacity = fl.mat._baseOpacity + 0.15 * t;
+      if (fl.mat && fl.mat._baseOpacity !== undefined) fl.mat.opacity = fl.mat._baseOpacity + 0.20 * t;
     }
   } else {
     if (stormFlashLight) stormFlashLight.intensity = 0;
@@ -5951,7 +5980,12 @@ function updateStorm(dt, countdown) {
     cl.mesh.position.z = cl.baseZ + Math.cos(time * cl.oscSpeed * 0.6) * 3;
   }
   for (const fl of stormFogLayers) {
-    if (fl.mat.map) fl.mat.map.offset.x -= fl.uvSpeed * dt;
+    // Wind-driven UV scroll: base drift + wind push per layer
+    const windUV = windActive ? windForceX * (fl.windMult || 0.2) * 0.003 : 0;
+    if (fl.mat.map) {
+      fl.mat.map.offset.x -= (fl.uvSpeed + windUV) * dt;
+      fl.mat.map.offset.y -= fl.uvSpeed * 0.3 * dt; // subtle z-axis drift
+    }
     fl.mesh.position.x = fl.baseX + Math.sin(time * fl.oscSpeed + 0.8) * 5;
     fl.mesh.position.z = fl.baseZ + Math.cos(time * fl.oscSpeed * 0.7 + 0.5) * 3;
   }
