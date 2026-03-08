@@ -1605,42 +1605,91 @@ function buildStormBackground() {
   ];
 
   // ── Storm cloud ocean — deep, layered cloud system below platforms ──
-  // 6 layers create a thick volumetric storm cloud bank beneath the playable area.
-  // Each layer has different size, density, wave displacement, and drift speed
-  // to produce parallax depth. Wind pushes UV offset for living movement.
+  // Uses a dedicated builder that paints brighter canvas blobs and sets
+  // material color to white (0xffffff) so the texture isn't darkened by
+  // the color×texture multiplication that makes makeStormCloud layers
+  // work as subtle overlays. The ocean layers must be SEEN from above.
+  function makeOceanCloud(cfg) {
+    const { blobCount, blobMaxR, baseColor, blobColor, opacity,
+            yPos, size, segs, waveAmp, seed, repeatS, blobOpacity } = cfg;
+    let _cs = seed;
+    function cr() { _cs = (_cs * 16807) % 2147483647; return (_cs - 1) / 2147483646; }
+
+    const cc = document.createElement("canvas"); cc.width = 512; cc.height = 512;
+    const cctx = cc.getContext("2d");
+    // Dark base — heavier fill so the whole plane reads as cloud
+    const br = (baseColor >> 16) & 0xff, bg = (baseColor >> 8) & 0xff, bb = baseColor & 0xff;
+    cctx.fillStyle = `rgba(${br},${bg},${bb},0.5)`;
+    cctx.fillRect(0, 0, 512, 512);
+    // Bright storm cloud blobs — higher alpha for visibility from above
+    const bo = blobOpacity || 0.75;
+    for (let i = 0; i < blobCount; i++) {
+      const bx = cr() * 512, by = cr() * 512;
+      const blobR = (blobMaxR * 0.35) + cr() * (blobMaxR * 0.65);
+      const grad = cctx.createRadialGradient(bx, by, 0, bx, by, blobR);
+      const cr2 = (blobColor >> 16) & 0xff, cg2 = (blobColor >> 8) & 0xff, cb2 = blobColor & 0xff;
+      grad.addColorStop(0,   `rgba(${cr2},${cg2},${cb2},${bo})`);
+      grad.addColorStop(0.35,`rgba(${cr2},${cg2},${cb2},${bo * 0.55})`);
+      grad.addColorStop(0.7, `rgba(${cr2},${cg2},${cb2},${bo * 0.2})`);
+      grad.addColorStop(1,   `rgba(${cr2},${cg2},${cb2},0)`);
+      cctx.fillStyle = grad;
+      cctx.fillRect(bx - blobR, by - blobR, blobR * 2, blobR * 2);
+    }
+    const tex = new THREE.CanvasTexture(cc);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(repeatS, repeatS);
+    // color: 0xffffff — NO multiplication, let texture colors show at full brightness
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex, color: 0xffffff, transparent: true, opacity,
+      depthWrite: false, side: THREE.DoubleSide, fog: false
+    });
+    const geo = new THREE.PlaneGeometry(size, size, segs, segs);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const lx = pos.getX(i), ly = pos.getY(i);
+      const d = Math.sin(lx * 0.014 + seed * 2.7) * Math.cos(ly * 0.011 + seed * 1.3) * waveAmp
+              + Math.sin(lx * 0.027 + ly * 0.019 + seed * 4.1) * waveAmp * 0.35
+              + (cr() - 0.5) * waveAmp * 0.12;
+      pos.setZ(i, d);
+    }
+    geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(0, yPos, -85);
+    mesh.renderOrder = 1;
+    stormGroup.add(mesh);
+    return { mesh, mat };
+  }
+
   const fogCfgs = [
-    // Upper cloud tops — just below platform level, densest, brightest edges
+    // Upper cloud tops — just below platform level, densest, brightest
     { blobCount: 70, blobMaxR: 160, baseColor: 0x15263f, blobColor: 0x2b4f7a,
-      colorHex: 0x15263f, opacity: 0.60, yPos: -6,  size: 1200, segs: 48, waveAmp: 3.5, seed: 3317, repeatS: 3,
-      oscSpeed: 0.10, uvSpeed: 0.005, windMult: 0.20 },
-    // Upper-mid — slightly offset, still fairly bright
+      opacity: 0.55, yPos: -4,  size: 1200, segs: 48, waveAmp: 3.5, seed: 3317, repeatS: 3,
+      blobOpacity: 0.80, oscSpeed: 0.10, uvSpeed: 0.005, windMult: 0.20 },
+    // Upper-mid — offset pattern
     { blobCount: 60, blobMaxR: 140, baseColor: 0x122240, blobColor: 0x244468,
-      colorHex: 0x122240, opacity: 0.55, yPos: -10, size: 1400, segs: 44, waveAmp: 3.0, seed: 7823, repeatS: 4,
-      oscSpeed: 0.08, uvSpeed: 0.004, windMult: 0.30 },
-    // Mid layer — larger, slower, still visible
+      opacity: 0.50, yPos: -8,  size: 1400, segs: 44, waveAmp: 3.0, seed: 7823, repeatS: 4,
+      blobOpacity: 0.75, oscSpeed: 0.08, uvSpeed: 0.004, windMult: 0.30 },
+    // Mid layer — larger, creates depth
     { blobCount: 55, blobMaxR: 170, baseColor: 0x0e1c34, blobColor: 0x1e3858,
-      colorHex: 0x0e1c34, opacity: 0.48, yPos: -15, size: 1600, segs: 40, waveAmp: 2.5, seed: 2209, repeatS: 5,
-      oscSpeed: 0.06, uvSpeed: 0.003, windMult: 0.35 },
-    // Deep mid — darkening toward abyss
+      opacity: 0.45, yPos: -14, size: 1600, segs: 40, waveAmp: 2.5, seed: 2209, repeatS: 5,
+      blobOpacity: 0.70, oscSpeed: 0.06, uvSpeed: 0.003, windMult: 0.35 },
+    // Deep mid — darkening
     { blobCount: 50, blobMaxR: 180, baseColor: 0x0b1628, blobColor: 0x162c48,
-      colorHex: 0x0b1628, opacity: 0.40, yPos: -22, size: 1800, segs: 36, waveAmp: 2.0, seed: 6641, repeatS: 6,
-      oscSpeed: 0.04, uvSpeed: 0.002, windMult: 0.25 },
-    // Deep layer — large, muted but still present
+      opacity: 0.38, yPos: -22, size: 1800, segs: 36, waveAmp: 2.0, seed: 6641, repeatS: 6,
+      blobOpacity: 0.65, oscSpeed: 0.04, uvSpeed: 0.002, windMult: 0.25 },
+    // Deep — large, muted
     { blobCount: 45, blobMaxR: 190, baseColor: 0x081220, blobColor: 0x122438,
-      colorHex: 0x081220, opacity: 0.32, yPos: -30, size: 2000, segs: 32, waveAmp: 1.5, seed: 4455, repeatS: 7,
-      oscSpeed: 0.03, uvSpeed: 0.0015, windMult: 0.15 },
-    // Abyss layer — deepest, faintest, enormous
+      opacity: 0.30, yPos: -30, size: 2000, segs: 32, waveAmp: 1.5, seed: 4455, repeatS: 7,
+      blobOpacity: 0.55, oscSpeed: 0.03, uvSpeed: 0.0015, windMult: 0.15 },
+    // Abyss — deepest, faintest
     { blobCount: 35, blobMaxR: 200, baseColor: 0x060e1a, blobColor: 0x0e1c2e,
-      colorHex: 0x060e1a, opacity: 0.24, yPos: -40, size: 2200, segs: 28, waveAmp: 1.0, seed: 9912, repeatS: 8,
-      oscSpeed: 0.02, uvSpeed: 0.001, windMult: 0.10 },
+      opacity: 0.22, yPos: -40, size: 2200, segs: 28, waveAmp: 1.0, seed: 9912, repeatS: 8,
+      blobOpacity: 0.45, oscSpeed: 0.02, uvSpeed: 0.001, windMult: 0.10 },
   ];
   stormFogLayers = [];
   for (const fc of fogCfgs) {
-    const layer = makeStormCloud({
-      blobCount: fc.blobCount, blobMaxR: fc.blobMaxR, baseColor: fc.baseColor, blobColor: fc.blobColor,
-      colorHex: fc.colorHex, opacity: fc.opacity, yPos: fc.yPos, zOffset: -85,
-      size: fc.size, segs: fc.segs, waveAmp: fc.waveAmp, seed: fc.seed, repeatS: fc.repeatS
-    });
+    const layer = makeOceanCloud(fc);
     stormFogLayers.push({
       ...layer, baseX: 0, baseZ: -85,
       oscSpeed: fc.oscSpeed, uvSpeed: fc.uvSpeed, windMult: fc.windMult
