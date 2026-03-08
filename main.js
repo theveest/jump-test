@@ -4255,63 +4255,115 @@ function buildLevel9() {
     dark:    0x111827,
   };
 
-  // Section 1: Entry — safe start
-  stormPlatform({ x: 0,  y: 0,   z:  0,   w: 12, d: 8, color: SC.bright, platType: "standard" });
-  stormPlatform({ x: 0,  y: 0.5, z: -13,  w: 5,  d: 4, color: SC.steel });
-  stormPlatform({ x: 0,  y: 1,   z: -23,  w: 4,  d: 4, color: SC.iron, platType: "electric" });
+  // ── SECTION 1: Storm Entry (z=0 to z=-58) — gentle introduction ──
+  stormPlatform({ x: 0,  y: 0,   z: 0,    w: 12, d: 8,  color: SC.bright, platType: "standard" }); // spawn
+  stormPlatform({ x: 0,  y: 0.3, z: -12,  w: 6,  d: 5,  color: SC.steel,  platType: "standard" });
+  stormPlatform({ x: -3, y: 0.6, z: -20,  w: 5,  d: 4,  color: SC.iron,   platType: "standard" }); // left offset
+  stormPlatform({ x: 3,  y: 1.0, z: -28,  w: 5,  d: 4,  color: SC.steel,  platType: "standard" }); // right offset
+  rampPlatform({ x: 0,  y: 1.5, z: -36,  w: 6,  d: 8,  angleDeg: 15, color: SC.bright });           // ramp up
+  stormPlatform({ x: 0,  y: 2.5, z: -44,  w: 6,  d: 4,  color: SC.iron,   platType: "standard" }); // post-ramp
+  stormPlatform({ x: 3,  y: 2.8, z: -50,  w: 4,  d: 4,  color: SC.charged, platType: "electric" }); // electric preview
+  stormPlatform({ x: -3, y: 2.8, z: -50,  w: 4,  d: 4,  color: SC.steel,  platType: "standard" }); // safe alternative
+  stormPlatform({ x: 0,  y: 3.0, z: -58,  w: 10, d: 6,  color: SC.bright, platType: "standard" }); // breather
 
-  // Section 2: Fork approach
-  stormPlatform({ x: 0,  y: 2,   z: -34,  w: 10, d: 5, color: SC.bright });
+  // ── SECTION 2: Wind Corridor (z=-58 to z=-126) — zig-zag wind jumps ──
+  stormPlatform({ x: -6, y: 3.3, z: -68,  w: 4,  d: 4,  color: SC.iron,   platType: "standard" });
+  stormPlatform({ x: 6,  y: 3.6, z: -76,  w: 4,  d: 4,  color: SC.steel,  platType: "standard" });
+  stormPlatform({ x: -8, y: 3.8, z: -84,  w: 4,  d: 3.5, color: SC.iron,   platType: "standard" });
+  stormPlatform({ x: 0,  y: 4.0, z: -90,  w: 3.5, d: 3,  color: SC.steel,  platType: "standard" }); // center rest
+  stormPlatform({ x: 7,  y: 4.2, z: -96,  w: 4,  d: 3.5, color: SC.iron,   platType: "standard" });
+  stormPlatform({ x: -7, y: 4.4, z: -102, w: 4,  d: 3.5, color: SC.steel,  platType: "standard" });
+  stormPlatform({ x: 2,  y: 4.6, z: -108, w: 3.5, d: 3,  color: SC.iron,   platType: "standard" });
+  stormPlatform({ x: 9,  y: 4.8, z: -113, w: 3.5, d: 3,  color: SC.charged, platType: "electric" }); // edge electric
+  stormPlatform({ x: -2, y: 5.0, z: -118, w: 4,  d: 4,  color: SC.steel,  platType: "standard" });
+  stormPlatform({ x: 0,  y: 5.2, z: -126, w: 10, d: 6,  color: SC.bright, platType: "standard" }); // breather
 
-  // PATH A — LEFT: Phase platforms + mover
-  stormPlatform({ x: -7, y: 2,   z: -45,  w: 4,  d: 4, color: SC.steel });
-  stormPlatform({ x: -8, y: 2.5, z: -55,  w: 4,  d: 3.5, color: SC.charged, platType: "phase" });
-  movingPlatform({ x: -7, y: 3,  z: -65,  w: 4, h: 0.6, d: 3.5, axis: "x", amplitude: 3.0, speed: 1.2, phase: 0, color: SC.iron });
-  stormPlatform({ x: -6, y: 3.5, z: -75,  w: 4,  d: 4, color: SC.steel, platType: "electric" });
-  stormPlatform({ x: -5, y: 3.5, z: -85,  w: 4,  d: 4, color: SC.bright });
+  // ── SECTION 3: Lightning Field (z=-126 to z=-188) — electric risk/reward + Lightning Run ──
+  stormPlatform({ x: -4, y: 5.5, z: -136, w: 5,  d: 4,  color: SC.steel,  platType: "standard" }); // safe entry left
+  stormPlatform({ x: 5,  y: 5.5, z: -136, w: 4,  d: 4,  color: SC.charged, platType: "electric" }); // risky shortcut
+  stormPlatform({ x: -5, y: 5.8, z: -146, w: 4,  d: 4,  color: SC.iron,   platType: "standard" }); // safe step
+  stormPlatform({ x: 4,  y: 5.8, z: -144, w: 3.5, d: 3.5, color: SC.charged, platType: "electric" }); // risk/reward
+  stormPlatform({ x: 0,  y: 6.0, z: -154, w: 6,  d: 4,  color: SC.bright, platType: "standard" }); // merge
+  stormPlatform({ x: 0,  y: 6.2, z: -162, w: 4,  d: 4,  color: SC.charged, platType: "electric" }); // Lightning Run 1/3
+  stormPlatform({ x: 0,  y: 6.4, z: -170, w: 4,  d: 3.5, color: SC.charged, platType: "electric" }); // Lightning Run 2/3
+  stormPlatform({ x: 0,  y: 6.6, z: -178, w: 4,  d: 3.5, color: SC.charged, platType: "electric" }); // Lightning Run 3/3
+  stormPlatform({ x: -8, y: 6.3, z: -170, w: 3.5, d: 3,  color: SC.steel,  platType: "standard" }); // side escape L
+  stormPlatform({ x: 8,  y: 6.5, z: -178, w: 3.5, d: 3,  color: SC.steel,  platType: "standard" }); // side escape R
+  stormPlatform({ x: 0,  y: 6.8, z: -188, w: 10, d: 6,  color: SC.bright, platType: "standard" }); // breather
 
-  // PATH B — RIGHT: Electric + pendulums
-  stormPlatform({ x: 7,  y: 2,   z: -45,  w: 4,  d: 4, color: SC.iron });
-  stormPlatform({ x: 9,  y: 3,   z: -55,  w: 3.5, d: 3, color: SC.charged, platType: "electric" });
-  pendulumObstacle({ x: 6, y: 14, z: -61, armLength: 8.5, speed: 2.1, amplitude: 0.85, color: 0x66ccff });
-  stormPlatform({ x: 7,  y: 3,   z: -68,  w: 4,  d: 4, color: SC.steel });
-  movingPlatform({ x: 8, y: 3.5, z: -78,  w: 4, h: 0.6, d: 3, axis: "z", amplitude: 2.5, speed: 1.3, phase: 0.8, color: SC.iron });
-  stormPlatform({ x: 5,  y: 3.5, z: -85,  w: 4,  d: 4, color: SC.bright });
+  // ── SECTION 4: Disappearing Platform Grid (z=-188 to z=-244) — phase timing ──
+  // Row 1
+  stormPlatform({ x: -5, y: 7.0, z: -198, w: 4,  d: 4,  color: SC.charged, platType: "phase" });
+  stormPlatform({ x: 0,  y: 7.0, z: -198, w: 4,  d: 4,  color: SC.charged, platType: "phase" });
+  stormPlatform({ x: 5,  y: 7.0, z: -198, w: 4,  d: 4,  color: SC.charged, platType: "phase" });
+  // Safe rest
+  stormPlatform({ x: 0,  y: 7.3, z: -208, w: 5,  d: 4,  color: SC.bright, platType: "standard" });
+  // Row 2
+  stormPlatform({ x: -6, y: 7.5, z: -216, w: 3.5, d: 3.5, color: SC.charged, platType: "phase" });
+  stormPlatform({ x: 3,  y: 7.5, z: -216, w: 3.5, d: 3.5, color: SC.charged, platType: "phase" });
+  stormPlatform({ x: 8,  y: 7.5, z: -216, w: 3.5, d: 3.5, color: SC.charged, platType: "phase" });
+  // Safe rest
+  stormPlatform({ x: 4,  y: 7.8, z: -226, w: 5,  d: 4,  color: SC.bright, platType: "standard" });
+  // Row 3
+  stormPlatform({ x: -4, y: 8.0, z: -234, w: 3.5, d: 3.5, color: SC.charged, platType: "phase" });
+  stormPlatform({ x: 2,  y: 8.0, z: -234, w: 3.5, d: 3.5, color: SC.charged, platType: "phase" });
+  stormPlatform({ x: 7,  y: 8.0, z: -234, w: 3.5, d: 3.5, color: SC.charged, platType: "phase" });
+  // Breather
+  stormPlatform({ x: 0,  y: 8.2, z: -244, w: 10, d: 6,  color: SC.bright, platType: "standard" });
 
-  // Section 3: Merge breather
-  stormPlatform({ x: 0,  y: 4,   z: -96,  w: 10, d: 6, color: SC.bright });
+  // ── SECTION 5: Moving Storm Bridges (z=-244 to z=-328) — ride the storm ──
+  stormPlatform({ x: -3, y: 8.5, z: -254, w: 5,  d: 4,  color: SC.steel,  platType: "standard" }); // approach
+  movingPlatform({ x: 0,  y: 8.8, z: -264, w: 8, h: 0.6, d: 5, axis: "x", amplitude: 6, speed: 0.8, phase: 0, color: SC.iron }); // bridge 1
+  stormPlatform({ x: 5,  y: 9.0, z: -274, w: 5,  d: 4,  color: SC.steel,  platType: "standard" }); // landing
+  rampPlatform({ x: 2,  y: 9.5, z: -282, w: 5,  d: 7,  angleDeg: 18, color: SC.bright });            // ramp up
+  stormPlatform({ x: 0,  y: 10.2, z: -290, w: 5,  d: 4,  color: SC.iron,   platType: "standard" }); // post-ramp
+  movingPlatform({ x: -2, y: 10.2, z: -300, w: 6, h: 0.6, d: 4, axis: "z", amplitude: 5, speed: 1.0, phase: 0, color: SC.iron }); // bridge 2
+  stormPlatform({ x: 3,  y: 10.5, z: -304, w: 3.5, d: 3,  color: SC.steel,  platType: "standard" }); // stepping stone
+  movingPlatform({ x: 0,  y: 10.5, z: -312, w: 7, h: 0.6, d: 4, axis: "x", amplitude: 5, speed: 1.0, phase: Math.PI, color: SC.iron }); // bridge 3
+  stormPlatform({ x: -4, y: 10.8, z: -320, w: 5,  d: 4,  color: SC.steel,  platType: "standard" }); // landing
+  stormPlatform({ x: 0,  y: 11.0, z: -328, w: 10, d: 6,  color: SC.bright, platType: "standard" }); // breather
 
-  // Section 4: Combined gauntlet
-  stormPlatform({ x: 0,  y: 4.5, z: -108, w: 4,  d: 4, color: SC.charged, platType: "phase" });
-  movingPlatform({ x: 0, y: 5,   z: -118, w: 5, h: 0.6, d: 4, axis: "x", amplitude: 4.0, speed: 1.4, phase: 0, color: SC.iron });
-  stormPlatform({ x: 0,  y: 5.5, z: -128, w: 4,  d: 4, color: SC.steel, platType: "electric" });
-  pendulumObstacle({ x: 0, y: 16, z: -134, armLength: 10, speed: 2.3, amplitude: 0.90, color: 0x4488cc });
-  stormPlatform({ x: 0,  y: 5.5, z: -140, w: 3,  d: 3, color: SC.iron });
-  stormPlatform({ x: 0,  y: 6,   z: -150, w: 4,  d: 4, color: SC.charged, platType: "phase" });
-  movingPlatform({ x: 0, y: 6.5, z: -160, w: 5, h: 0.6, d: 4, axis: "x", amplitude: 3.5, speed: 1.5, phase: 0.4, color: SC.steel });
+  // ── SECTION 6: Final Storm Gauntlet (z=-328 to z=-392) — all mechanics combined ──
+  stormPlatform({ x: -4, y: 11.3, z: -336, w: 4,  d: 4,  color: SC.charged, platType: "electric" }); // danger
+  stormPlatform({ x: 4,  y: 11.3, z: -336, w: 4,  d: 4,  color: SC.charged, platType: "phase" });    // timing
+  movingPlatform({ x: 0,  y: 11.5, z: -344, w: 5, h: 0.6, d: 4, axis: "x", amplitude: 4, speed: 1.2, phase: 0, color: SC.iron }); // moving
+  stormPlatform({ x: -5, y: 11.8, z: -352, w: 4,  d: 3.5, color: SC.charged, platType: "phase" });   // phase from mover
+  stormPlatform({ x: 5,  y: 11.8, z: -352, w: 4,  d: 3.5, color: SC.charged, platType: "electric" }); // electric alt
+  stormPlatform({ x: 0,  y: 12.0, z: -358, w: 3.5, d: 3,  color: SC.steel,  platType: "standard" }); // safe step
+  rampPlatform({ x: 0,  y: 12.5, z: -364, w: 5,  d: 7,  angleDeg: 20, color: SC.bright });            // final ramp
+  stormPlatform({ x: 4,  y: 13.2, z: -372, w: 3.5, d: 3,  color: SC.charged, platType: "electric" }); // post-ramp
+  stormPlatform({ x: -3, y: 13.2, z: -372, w: 3.5, d: 3,  color: SC.charged, platType: "phase" });   // post-ramp
+  movingPlatform({ x: 0,  y: 13.5, z: -378, w: 5, h: 0.6, d: 4, axis: "x", amplitude: 3, speed: 1.3, phase: 0.5, color: SC.iron }); // final bridge
+  stormPlatform({ x: 0,  y: 13.8, z: -384, w: 4,  d: 4,  color: SC.steel,  platType: "standard" }); // pre-finish
+  stormPlatform({ x: 0,  y: 14.0, z: -392, w: 12, d: 8,  color: SC.bright, platType: "standard" }); // FINISH
 
-  // Section 5: Finish
-  stormPlatform({ x: 0,  y: 7,   z: -172, w: 10, d: 8, color: SC.bright });
-
-  // Environmental electric glow lights
-  const el1 = new THREE.PointLight(0x5fd0ff, 1.2, 90);
-  el1.position.set(-15, 10, -55);
+  // ── Environmental electric glow lights (6 lights covering full level) ──
+  const el1 = new THREE.PointLight(0x5fd0ff, 1.2, 100);
+  el1.position.set(-10, 10, -30);
   scene.add(el1); decorations.push(el1);
 
-  const el2 = new THREE.PointLight(0x4488cc, 1.0, 90);
-  el2.position.set(15, 12, -120);
+  const el2 = new THREE.PointLight(0x4488cc, 1.0, 100);
+  el2.position.set(10, 12, -95);
   scene.add(el2); decorations.push(el2);
 
-  const el3 = new THREE.PointLight(0x5599cc, 0.9, 80);
-  el3.position.set(0, 10, -30);
+  const el3 = new THREE.PointLight(0x5599cc, 1.1, 100);
+  el3.position.set(-8, 12, -160);
   scene.add(el3); decorations.push(el3);
 
-  const el4 = new THREE.PointLight(0x5fd0ff, 0.8, 80);
-  el4.position.set(0, 12, -160);
+  const el4 = new THREE.PointLight(0x5fd0ff, 1.0, 100);
+  el4.position.set(8, 14, -230);
   scene.add(el4); decorations.push(el4);
 
-  levelEndZ = -172;
-  spawnRing(0, 9.0, -172);
+  const el5 = new THREE.PointLight(0x4488cc, 1.1, 100);
+  el5.position.set(-10, 15, -310);
+  scene.add(el5); decorations.push(el5);
+
+  const el6 = new THREE.PointLight(0x5599cc, 1.2, 100);
+  el6.position.set(5, 16, -380);
+  scene.add(el6); decorations.push(el6);
+
+  levelEndZ = -392;
+  spawnRing(0, 16.0, -392);
 }
 
 let currentLevel = 1;
@@ -5789,7 +5841,7 @@ function updateStorm(dt, countdown) {
     if (stormBoltTimer <= 0) {
       // Pick random strike location near platforms
       const targetX = (Math.random() - 0.5) * 40;
-      const targetZ = -10 - Math.random() * 165;
+      const targetZ = -10 - Math.random() * 385;
       spawnLightningBolt(targetX, targetZ);
       stormBoltTimer = 3.0 + Math.random() * 4.0; // next in 3-7s
     }
