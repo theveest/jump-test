@@ -796,14 +796,10 @@ function firePendulum({ x, y, z, armLength = 7, ballRadius = 1.1, speed = 1.8, a
   ));
 
   // Fire light — strong, flickering (intensity driven by updatePendulums)
-  const fireLight = new THREE.PointLight(0xFF5500, 3.5, 14);
+  // Range 20 keeps close glow; fill light removed to cut PointLight count (perf).
+  const fireLight = new THREE.PointLight(0xFF5500, 4.0, 20);
   fireLight.position.set(0, 0, 0);
   ballGroup.add(fireLight);
-
-  // Wide ambient fill — casts orange glow on surrounding platforms
-  const fillLight = new THREE.PointLight(0xFF3300, 0.75, 36);
-  fillLight.position.set(0, 0, 0);
-  ballGroup.add(fillLight);
 
   group.add(ballGroup);
 
@@ -1399,10 +1395,10 @@ function buildVolcanoBackground() {
 
   const lavaY = -15;
 
-  // Lava sea base
+  // Lava sea base — MeshBasicMaterial (no per-pixel lighting cost for this huge plane)
   const lavaMesh = new THREE.Mesh(
     new THREE.PlaneGeometry(700, 700),
-    new THREE.MeshStandardMaterial({ color: 0x220500, emissive: 0xCC3300, emissiveIntensity: 0.85, roughness: 0.9 })
+    new THREE.MeshBasicMaterial({ color: 0x661800 })
   );
   lavaMesh.rotation.x = -Math.PI * 0.5;
   lavaMesh.position.set(0, lavaY, -127);
@@ -1418,9 +1414,10 @@ function buildVolcanoBackground() {
   volcanoGroup.add(lavaGlowMesh);
 
   // Warm point lights below platforms — orange glow from beneath
-  const lCols = [0xFF5500, 0xFF3300, 0xFF8800, 0xFF4400, 0xFF6600, 0xFF2200];
-  [[-20,-12,-40],[25,-12,-90],[-15,-12,-145],[22,-12,-195],[-18,-12,-245],[5,-12,-200]].forEach(([px,py,pz], i) => {
-    const pl = new THREE.PointLight(lCols[i % lCols.length], 3.8, 75);
+  // 3 lights (down from 6) with wider range — cuts GPU per-pixel cost significantly
+  const lCols = [0xFF5500, 0xFF4400, 0xFF6600];
+  [[-10,-12,-60],[10,-12,-150],[0,-12,-230]].forEach(([px,py,pz], i) => {
+    const pl = new THREE.PointLight(lCols[i], 4.5, 100);
     pl.position.set(px, py, pz);
     volcanoGroup.add(pl);
   });
@@ -1432,9 +1429,10 @@ function buildVolcanoBackground() {
     const z = rng() * -300 + 22;
     const h = 6 + rng() * 22;
     const r = 1.5 + rng() * 4.0;
+    // MeshBasicMaterial — spires are dark silhouettes, don't need per-pixel lighting
     const spire = new THREE.Mesh(
       new THREE.CylinderGeometry(r * 0.05, r, h, 6),
-      new THREE.MeshStandardMaterial({ color: spireColors[Math.floor(rng() * spireColors.length)], roughness: 1.0 })
+      new THREE.MeshBasicMaterial({ color: spireColors[Math.floor(rng() * spireColors.length)] })
     );
     spire.position.set(x, lavaY + h * 0.5, z);
     spire.rotation.y = rng() * Math.PI * 2;
@@ -2085,11 +2083,12 @@ function spawnGeyser(x, z, period, phaseOffset) {
   scene.add(baseMesh);
 
   // Rising lava column — tapered upward, starts invisible
+  // MeshBasicMaterial — self-lit lava doesn't need per-pixel lighting (perf)
   const colMesh = new THREE.Mesh(
     new THREE.CylinderGeometry(topR, botR, colH, 8),
-    new THREE.MeshStandardMaterial({
-      color: 0xFF4400, emissive: 0xFF2200, emissiveIntensity: 1.0,
-      transparent: true, opacity: 0.0, roughness: 0.9,
+    new THREE.MeshBasicMaterial({
+      color: 0xFF4400,
+      transparent: true, opacity: 0.0,
     })
   );
   colMesh.position.set(x, lavaY + colH * 0.5, z);
@@ -2131,6 +2130,7 @@ function updateGeysers() {
       g.baseMesh.material.opacity = 0.35 + Math.sin(wt * Math.PI * 5) * 0.28;
       g.colMesh.material.opacity  = wt * 0.12;
       g.light.intensity           = wt * 2.0;
+      g.light.visible             = true;
     } else if (t < warmup + burstD) {
       // Burst: column shoots up, lethal to player
       g.active = true;
@@ -2139,12 +2139,13 @@ function updateGeysers() {
       g.colMesh.material.opacity  = op * 0.90;
       g.baseMesh.material.opacity = 0.85;
       g.light.intensity           = op * 5.5;
+      g.light.visible             = true;
     } else {
-      // Dormant
+      // Dormant — hide light entirely so Three.js excludes it from shader (perf)
       g.active = false;
       g.colMesh.material.opacity  = 0.0;
       g.baseMesh.material.opacity = 0.20;
-      g.light.intensity           = 0;
+      g.light.visible             = false;
     }
   }
 }
