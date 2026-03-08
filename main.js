@@ -5158,7 +5158,10 @@ function resolveSideXZ(p, padding = 0.02) {
 }
 
 function rampHeightAt(ramp, x, z) {
-  const pWorld = _tmpRampP.set(x, 0, z);
+  // Use ramp center y (not 0) so the tilt rotation doesn't leak a large
+  // y-offset into the local z coordinate — which breaks the bounds check
+  // for ramps high above y=0 (e.g. y=12.5 at 20° gave a 4.28-unit z error).
+  const pWorld = _tmpRampP.set(x, ramp.point.y, z);
   const inv    = _tmpRampInv.copy(ramp.mesh.matrixWorld).invert();
   const pLocal = pWorld.applyMatrix4(inv);
   if (Math.abs(pLocal.x) > ramp.w / 2) return null;
