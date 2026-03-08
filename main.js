@@ -545,13 +545,24 @@ function rampPlatform({ x, y, z, w, d, angleDeg = 18, yawDeg = 0, thickness = 0.
   col.rotation.x = -THREE.MathUtils.degToRad(angleDeg);
   scene.add(col);
   const vt = Math.max(thickness, 0.7);
-  const vis = neon ? buildNeonVisual(w, vt, d, color) : buildBrightVisual(w, vt, d, color);
+  let vis, topMat = null;
+  if (levelMat.stormVisual) {
+    const result = buildStormBaseVisual(w, vt, d);
+    vis = result.group;
+    topMat = result.topMat;
+  } else if (levelMat.iceVisual) {
+    const result = buildIcePlatformVisual(w, vt, d);
+    vis = result.group;
+    topMat = result.topMat;
+  } else {
+    vis = neon ? buildNeonVisual(w, vt, d, color) : buildBrightVisual(w, vt, d, color);
+  }
   vis.position.y += (vt - thickness) * 0.5;
   col.add(vis);
   col.updateMatrixWorld(true);
   const normal = new THREE.Vector3(0, 1, 0).applyQuaternion(col.quaternion).normalize();
   const point  = col.position.clone();
-  ramps.push({ type: "ramp", mesh: col, w, d, thickness, normal, point, topMat: null, baseEI: 0 });
+  ramps.push({ type: "ramp", mesh: col, w, d, thickness, normal, point, topMat, baseEI: topMat ? topMat.emissiveIntensity : 0 });
   return col;
 }
 
@@ -1574,34 +1585,36 @@ function buildStormBackground() {
 
   // ── Rolling storm cloud layers — surround the player at visible heights ──
   // Platforms at y=0-7, camera at ~y=6-13. Clouds at y=8-32 are visible.
+  // Stagger rolling cloud layers across the full level z-range for continuous coverage
   const sc1 = makeStormCloud({ blobCount: 50, blobMaxR: 140, baseColor: 0x111c2f, blobColor: 0x1b2b47,
-    colorHex: 0x111c2f, opacity: 0.35, yPos: 12, zOffset: -85, size: 800, segs: 36, waveAmp: 3.0, seed: 8317, repeatS: 3 });
+    colorHex: 0x111c2f, opacity: 0.35, yPos: 12, zOffset: -50, size: 800, segs: 36, waveAmp: 3.0, seed: 8317, repeatS: 3 });
   const sc2 = makeStormCloud({ blobCount: 60, blobMaxR: 120, baseColor: 0x0e1828, blobColor: 0x1a2840,
-    colorHex: 0x0e1828, opacity: 0.30, yPos: 18, zOffset: -85, size: 900, segs: 32, waveAmp: 2.5, seed: 4421, repeatS: 4 });
+    colorHex: 0x0e1828, opacity: 0.30, yPos: 18, zOffset: -150, size: 900, segs: 32, waveAmp: 2.5, seed: 4421, repeatS: 4 });
   const sc3 = makeStormCloud({ blobCount: 45, blobMaxR: 150, baseColor: 0x152538, blobColor: 0x1f3350,
-    colorHex: 0x152538, opacity: 0.22, yPos: 25, zOffset: -85, size: 1000, segs: 28, waveAmp: 2.0, seed: 6103, repeatS: 5 });
+    colorHex: 0x152538, opacity: 0.22, yPos: 25, zOffset: -250, size: 1000, segs: 28, waveAmp: 2.0, seed: 6103, repeatS: 5 });
   const sc4 = makeStormCloud({ blobCount: 55, blobMaxR: 130, baseColor: 0x0d1a2e, blobColor: 0x162840,
-    colorHex: 0x0d1a2e, opacity: 0.28, yPos: 8, zOffset: -85, size: 850, segs: 30, waveAmp: 3.5, seed: 7209, repeatS: 3 });
+    colorHex: 0x0d1a2e, opacity: 0.28, yPos: 8, zOffset: -340, size: 850, segs: 30, waveAmp: 3.5, seed: 7209, repeatS: 3 });
   const sc5 = makeStormCloud({ blobCount: 35, blobMaxR: 160, baseColor: 0x0a1322, blobColor: 0x14243a,
-    colorHex: 0x0a1322, opacity: 0.15, yPos: 32, zOffset: -85, size: 1100, segs: 24, waveAmp: 1.5, seed: 5517, repeatS: 6 });
+    colorHex: 0x0a1322, opacity: 0.15, yPos: 32, zOffset: -200, size: 1100, segs: 24, waveAmp: 1.5, seed: 5517, repeatS: 6 });
 
   stormCloudPlanes = [
-    { ...sc1, baseX: 0, baseZ: -85, oscSpeed: 0.12, uvSpeed: 0.004 },
-    { ...sc2, baseX: 0, baseZ: -85, oscSpeed: 0.08, uvSpeed: 0.003 },
-    { ...sc3, baseX: 0, baseZ: -85, oscSpeed: 0.05, uvSpeed: 0.002 },
-    { ...sc4, baseX: 0, baseZ: -85, oscSpeed: 0.10, uvSpeed: 0.0035 },
-    { ...sc5, baseX: 0, baseZ: -85, oscSpeed: 0.035, uvSpeed: 0.0015 },
+    { ...sc1, baseX: 0, baseZ: -50,  oscSpeed: 0.12,  uvSpeed: 0.004 },
+    { ...sc2, baseX: 0, baseZ: -150, oscSpeed: 0.08,  uvSpeed: 0.003 },
+    { ...sc3, baseX: 0, baseZ: -250, oscSpeed: 0.05,  uvSpeed: 0.002 },
+    { ...sc4, baseX: 0, baseZ: -340, oscSpeed: 0.10,  uvSpeed: 0.0035 },
+    { ...sc5, baseX: 0, baseZ: -200, oscSpeed: 0.035, uvSpeed: 0.0015 },
   ];
 
   // ── Overhead cloud ceiling — dense, dark, oppressive ──
+  // Stagger across level depth and use larger sizes for full coverage
   const ceil1 = makeStormCloud({ blobCount: 70, blobMaxR: 120, baseColor: 0x0a1020, blobColor: 0x152030,
-    colorHex: 0x0a1020, opacity: 0.50, yPos: 35, zOffset: -85, size: 600, segs: 32, waveAmp: 1.5, seed: 9901, repeatS: 3 });
+    colorHex: 0x0a1020, opacity: 0.50, yPos: 35, zOffset: -100, size: 700, segs: 32, waveAmp: 1.5, seed: 9901, repeatS: 3 });
   const ceil2 = makeStormCloud({ blobCount: 80, blobMaxR: 100, baseColor: 0x080e1a, blobColor: 0x101e30,
-    colorHex: 0x080e1a, opacity: 0.40, yPos: 42, zOffset: -85, size: 700, segs: 28, waveAmp: 1.0, seed: 1133, repeatS: 4 });
+    colorHex: 0x080e1a, opacity: 0.40, yPos: 42, zOffset: -300, size: 800, segs: 28, waveAmp: 1.0, seed: 1133, repeatS: 4 });
 
   stormCeilingLayers = [
-    { ...ceil1, baseX: 0, baseZ: -85, oscSpeed: 0.04, uvSpeed: 0.002 },
-    { ...ceil2, baseX: 0, baseZ: -85, oscSpeed: 0.025, uvSpeed: 0.0012 },
+    { ...ceil1, baseX: 0, baseZ: -100, oscSpeed: 0.04,  uvSpeed: 0.002 },
+    { ...ceil2, baseX: 0, baseZ: -300, oscSpeed: 0.025, uvSpeed: 0.0012 },
   ];
 
   // ── Storm cloud masses — individual dark cloud bodies below platforms ──
@@ -1667,11 +1680,12 @@ function buildStormBackground() {
   let cloudSeed = 60000;
 
   // Tier 1: Near clouds — just below platforms, smaller, denser, higher opacity
-  for (let i = 0; i < 14; i++) {
+  // z-range extended to cover full level length (z=0 to z=-392)
+  for (let i = 0; i < 20; i++) {
     cloudSeed += 137;
     const x = (cloudRng() - 0.5) * 180;
     const y = -3 - cloudRng() * 5;
-    const z = -10 - cloudRng() * 170;
+    const z = -10 - cloudRng() * 390;
     const w = 40 + cloudRng() * 60;
     const h = 30 + cloudRng() * 50;
     const layer = makeCloudMass({
@@ -1694,11 +1708,11 @@ function buildStormBackground() {
   }
 
   // Tier 2: Mid clouds — larger, more spread out, medium opacity
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 16; i++) {
     cloudSeed += 251;
     const x = (cloudRng() - 0.5) * 200;
     const y = -10 - cloudRng() * 8;
-    const z = -10 - cloudRng() * 170;
+    const z = -10 - cloudRng() * 390;
     const w = 80 + cloudRng() * 80;
     const h = 60 + cloudRng() * 60;
     const layer = makeCloudMass({
@@ -1721,11 +1735,11 @@ function buildStormBackground() {
   }
 
   // Tier 3: Deep clouds — largest, faintest, slowest for depth
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 14; i++) {
     cloudSeed += 373;
     const x = (cloudRng() - 0.5) * 240;
     const y = -20 - cloudRng() * 12;
-    const z = -20 - cloudRng() * 170;
+    const z = -20 - cloudRng() * 380;
     const w = 120 + cloudRng() * 130;
     const h = 90 + cloudRng() * 100;
     const layer = makeCloudMass({
@@ -1912,10 +1926,16 @@ function buildStormBackground() {
     stormGroup.add(plane);
     stormWallClouds.push({ mesh: plane, mat, uvSpeed: 0.001 + sr() * 0.001 });
   }
-  addStormWall(-80, -85, 15, Math.PI * 0.15, 300, 70, 0.55, 1117);
-  addStormWall( 80, -85, 15, -Math.PI * 0.15, 300, 70, 0.55, 2233);
-  addStormWall(  0, -250, 15, 0, 350, 80, 0.45, 3349);
-  addStormWall(  0,  40, 15, Math.PI, 300, 60, 0.40, 4461);
+  // Front-half walls (original pair — cover z≈+65 to z≈-235)
+  addStormWall(-80, -85,  15, Math.PI * 0.15, 300, 70, 0.55, 1117);
+  addStormWall( 80, -85,  15, -Math.PI * 0.15, 300, 70, 0.55, 2233);
+  // Deep-half walls (cover z≈-135 to z≈-435 — overlaps with front pair for seamless blend)
+  addStormWall(-85, -285, 16, Math.PI * 0.12, 300, 75, 0.50, 5517);
+  addStormWall( 85, -285, 16, -Math.PI * 0.12, 300, 75, 0.50, 6633);
+  // Back wall — pushed deep to cover full level length
+  addStormWall(  0, -420, 15, 0, 400, 85, 0.45, 3349);
+  // Front wall
+  addStormWall(  0,  40,  15, Math.PI, 300, 60, 0.40, 4461);
 
   // ── Distant storm silhouettes — extreme depth beyond walls ──
   {
