@@ -4571,29 +4571,81 @@ function loadLevel(n) {
   else         startCountdown(n);
 }
 
-// ===== Player =====
+// ===== Player (Cube Rover) =====
 let wheelLRef = null, wheelRRef = null, bodyRef = null;
+let thrusterGlowRef = null;   // rear thruster glow disc (pulses when moving)
 const player = new THREE.Group();
 
+// ── Body — main cube with subtle top bevel ──
 const body = new THREE.Mesh(
-  new THREE.BoxGeometry(1.2, 1.6, 1.2),
+  new THREE.BoxGeometry(1.2, 1.5, 1.2),
   new THREE.MeshStandardMaterial({ color: 0xEE2222, roughness: 0.4, metalness: 0.1 })
 );
 body.position.y = 0.03;
 player.add(body);
 bodyRef = body;
 
+// ── Top bevel cap — slightly smaller box flush on top for subtle shape refinement ──
+const topCap = new THREE.Mesh(
+  new THREE.BoxGeometry(1.08, 0.10, 1.08),
+  new THREE.MeshStandardMaterial({ color: 0xEE2222, roughness: 0.32, metalness: 0.18 })
+);
+topCap.position.set(0, 0.76, 0);    // sits at body top (half-height 0.75 + 0.01)
+body.add(topCap);
+
+// ── Thruster mount plate — dark housing ring on rear face for contrast ──
+const thrusterMount = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.16, 0.16, 0.03, 16),
+  new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.7, metalness: 0.1 })
+);
+thrusterMount.rotation.x = Math.PI / 2;
+thrusterMount.position.set(0, -0.12, 0.61);   // flush against rear face
+body.add(thrusterMount);
+
+// ── Rear thruster nozzle — body-colored cone seated in dark mount plate ──
+const thrusterNozzleMat = new THREE.MeshStandardMaterial({ color: 0xBB1818, roughness: 0.28, metalness: 0.22 });
+const thrusterNozzle = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.06, 0.11, 0.10, 12),
+  thrusterNozzleMat
+);
+thrusterNozzle.rotation.x = Math.PI / 2;   // point nozzle backward (+Z)
+thrusterNozzle.position.set(0, -0.12, 0.65);
+body.add(thrusterNozzle);
+
+// Thruster inner glow — warm orange disc inside nozzle opening
+const thrusterGlow = new THREE.Mesh(
+  new THREE.CircleGeometry(0.07, 16),
+  new THREE.MeshBasicMaterial({ color: 0xFF8833, transparent: true, opacity: 0.0, depthWrite: false })
+);
+thrusterGlow.position.set(0, -0.12, 0.66);
+body.add(thrusterGlow);
+thrusterGlowRef = thrusterGlow;
+
+// ── Rear lights — 2 tiny red emissive boxes at upper rear corners ──
+const rearLightGeo = new THREE.BoxGeometry(0.10, 0.10, 0.03);
+const rearLightMat = new THREE.MeshStandardMaterial({
+  color: 0xFF2200, emissive: 0xFF2200, emissiveIntensity: 0.5,
+  roughness: 0.3, metalness: 0.1,
+});
+const rearLightL = new THREE.Mesh(rearLightGeo, rearLightMat);
+rearLightL.position.set(-0.48, 0.45, 0.62);
+body.add(rearLightL);
+const rearLightR = new THREE.Mesh(rearLightGeo, rearLightMat);
+rearLightR.position.set(0.48, 0.45, 0.62);
+body.add(rearLightR);
+
+// ── Wheels — 2 chunky cylinders, tucked into body ──
 const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
-const wheelGeo = new THREE.CylinderGeometry(0.28, 0.28, 0.3, 16);
+const wheelGeo = new THREE.CylinderGeometry(0.40, 0.40, 0.32, 16);
 
 const wheelL = new THREE.Mesh(wheelGeo, wheelMat);
 wheelL.rotation.z = Math.PI / 2;
-wheelL.position.set(-0.58, -0.67, 0);
+wheelL.position.set(-0.55, -0.58, 0);
 player.add(wheelL);
 
 const wheelR = new THREE.Mesh(wheelGeo, wheelMat);
 wheelR.rotation.z = Math.PI / 2;
-wheelR.position.set(0.58, -0.67, 0);
+wheelR.position.set(0.55, -0.58, 0);
 player.add(wheelR);
 
 wheelLRef = wheelL;
@@ -4604,9 +4656,9 @@ const spawn = new THREE.Vector3(0, 2.0, 0);
 player.position.copy(spawn);
 
 // ===== Fake shadow =====
-const shadowGeo  = new THREE.CircleGeometry(1.0, 16);
+const shadowGeo  = new THREE.CircleGeometry(0.70, 24);
 const shadowMat  = new THREE.MeshBasicMaterial({
-  color: 0x000000, transparent: true, opacity: 0.35,
+  color: 0x000000, transparent: true, opacity: 0.18,
   depthWrite: false, side: THREE.DoubleSide,
 });
 const shadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
@@ -4614,7 +4666,7 @@ shadowMesh.rotation.x = -Math.PI / 2;
 scene.add(shadowMesh);
 
 // ===== Motion trail =====
-const TRAIL_LEN    = 8;
+const TRAIL_LEN    = 6;
 const trailHistory = [];
 let   trailFrame   = 0;
 const trailPosArr  = new Float32Array(TRAIL_LEN * 3).fill(-9999);
@@ -4623,7 +4675,7 @@ const trailBufGeo  = new THREE.BufferGeometry();
 trailBufGeo.setAttribute("position", new THREE.BufferAttribute(trailPosArr, 3));
 trailBufGeo.setAttribute("color",    new THREE.BufferAttribute(trailColArr, 3));
 const trailPoints  = new THREE.Points(trailBufGeo, new THREE.PointsMaterial({
-  size: 0.28, vertexColors: true, transparent: true, opacity: 0.6, depthWrite: false,
+  size: 0.22, vertexColors: true, transparent: true, opacity: 0.45, depthWrite: false,
 }));
 trailPoints.frustumCulled = false;
 scene.add(trailPoints);
@@ -4648,7 +4700,7 @@ const countdownNumber   = document.getElementById("countdown-number");
 const levelNameHud      = document.getElementById("level-name-hud");
 
 const LEVEL_NAMES = {
-  0: "Childrens Park",
+  0: "Parkour Tutorial",
   1: "Golden Hour",
   2: "Above the Canopy",
   3: "Cosmic Drift",
@@ -4699,6 +4751,14 @@ let trailColorR = 0xEE / 255, trailColorG = 0x22 / 255, trailColorB = 0x22 / 255
 function applyVehicleColor(hexStr) {
   const hex = SKIN_VALS[hexStr] ?? 0xEE2222;
   body.material.color.setHex(hex);
+  if (topCap) topCap.material.color.setHex(hex);
+  // Nozzle: same hue but ~20% darker for subtle separation
+  if (thrusterNozzleMat) {
+    const r = ((hex >> 16) & 0xFF) * 0.8;
+    const g = ((hex >>  8) & 0xFF) * 0.8;
+    const b = ( hex        & 0xFF) * 0.8;
+    thrusterNozzleMat.color.setRGB(r / 255, g / 255, b / 255);
+  }
   localStorage.setItem(SKIN_KEY, hexStr);
   trailColorR = ((hex >> 16) & 0xFF) / 255;
   trailColorG = ((hex >>  8) & 0xFF) / 255;
@@ -5069,6 +5129,7 @@ function showNameEntry(finalTime) {
 
 // ===== Input =====
 const keys = new Set();
+let joystickX = 0, joystickY = 0;  // virtual thumbstick axes: -1..+1 (x: right+, y: down+)
 addEventListener("keydown", (e) => {
   if (e.target.tagName === "INPUT") return;
   keys.add(e.code); keys.add(e.key.toLowerCase());
@@ -5080,19 +5141,15 @@ addEventListener("keyup", (e) => {
 
 // ===== Mobile touch controls =====
 (function () {
-  function bindHold(id, code) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.addEventListener("touchstart",  e => { e.preventDefault(); keys.add(code); },    { passive: false });
-    el.addEventListener("touchend",    e => { e.preventDefault(); keys.delete(code); }, { passive: false });
-    el.addEventListener("touchcancel", ()  => { keys.delete(code); });
+  // ── Jump button (unchanged — adds/removes "Space" in keys Set) ──
+  const btnJ = document.getElementById("btn-jump");
+  if (btnJ) {
+    btnJ.addEventListener("touchstart",  e => { e.preventDefault(); keys.add("Space"); },    { passive: false });
+    btnJ.addEventListener("touchend",    e => { e.preventDefault(); keys.delete("Space"); }, { passive: false });
+    btnJ.addEventListener("touchcancel", ()  => { keys.delete("Space"); });
   }
-  bindHold("btn-up",    "KeyW");
-  bindHold("btn-down",  "KeyS");
-  bindHold("btn-left",  "KeyA");
-  bindHold("btn-right", "KeyD");
-  bindHold("btn-jump",  "Space");
 
+  // ── Reset button (unchanged) ──
   const btnR = document.getElementById("btn-reset-mobile");
   if (btnR) {
     btnR.addEventListener("touchend", e => {
@@ -5101,6 +5158,90 @@ addEventListener("keyup", (e) => {
       setTimeout(() => keys.delete("KeyR"), 100);
     }, { passive: false });
   }
+
+  // ── Dynamic virtual thumbstick ──
+  // Touch anywhere in the lower-left zone to spawn a joystick.
+  // Drag direction → movement direction (Y) + turn (X).
+  // Drag distance → movement intensity (analog).
+  // Release → joystick hides, movement zeroes out.
+  const zone = document.getElementById("joystick-zone");
+  const base = document.getElementById("joystick-base");
+  const knob = document.getElementById("joystick-knob");
+  const hint = document.getElementById("joystick-hint");
+  if (!zone || !base || !knob) return;
+
+  const MAX_RADIUS = 50;   // max drag distance in px
+  const DEAD_ZONE  = 0.15; // 15 % dead zone (fraction of MAX_RADIUS)
+  let activeTouch  = null;  // touch.identifier we're tracking (null = idle)
+  let baseX = 0, baseY = 0; // center of joystick base in viewport px
+
+  // Expose helper so reset() can re-show the ghost hint after respawn
+  window._showJoystickHint = function () {
+    if (hint) hint.style.opacity = "1";
+  };
+
+  zone.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    if (activeTouch !== null) return;           // already tracking a finger
+    const t = e.changedTouches[0];
+    activeTouch = t.identifier;
+    baseX = t.clientX;
+    baseY = t.clientY;
+    // Show joystick centered on touch point
+    base.style.left = baseX + "px";
+    base.style.top  = baseY + "px";
+    base.classList.add("active");
+    knob.style.transform = "translate(-50%, -50%)";
+    // Fade out the ghost hint on first touch
+    if (hint && hint.style.opacity !== "0") hint.style.opacity = "0";
+  }, { passive: false });
+
+  zone.addEventListener("touchmove", (e) => {
+    e.preventDefault();
+    if (activeTouch === null) return;
+    for (const t of e.changedTouches) {
+      if (t.identifier !== activeTouch) continue;
+      let dx = t.clientX - baseX;
+      let dy = t.clientY - baseY;
+      let dist = Math.sqrt(dx * dx + dy * dy);
+      // Clamp knob to MAX_RADIUS
+      if (dist > MAX_RADIUS) {
+        dx = (dx / dist) * MAX_RADIUS;
+        dy = (dy / dist) * MAX_RADIUS;
+        dist = MAX_RADIUS;
+      }
+      // Update knob visual position
+      knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+      // Normalized axes with radial dead zone
+      const normX = dx / MAX_RADIUS;             // -1 .. +1
+      const normY = dy / MAX_RADIUS;             // -1 .. +1
+      const mag   = dist / MAX_RADIUS;           //  0 .. 1
+      if (mag < DEAD_ZONE) {
+        joystickX = 0;
+        joystickY = 0;
+      } else {
+        // Remap [DEAD_ZONE..1] → [0..1] so movement starts from zero
+        const scale = (mag - DEAD_ZONE) / (1.0 - DEAD_ZONE) / mag;
+        joystickX = normX * scale;
+        joystickY = normY * scale;
+      }
+      break;
+    }
+  }, { passive: false });
+
+  function endTouch(e) {
+    for (const t of e.changedTouches) {
+      if (t.identifier !== activeTouch) continue;
+      activeTouch = null;
+      joystickX = 0;
+      joystickY = 0;
+      base.classList.remove("active");
+      knob.style.transform = "translate(-50%, -50%)";
+      break;
+    }
+  }
+  zone.addEventListener("touchend",    endTouch, { passive: false });
+  zone.addEventListener("touchcancel", endTouch, { passive: false });
 })();
 
 // ===== Admin level jump (1 / 2 / 3) =====
@@ -5204,6 +5345,8 @@ function reset() {
   player.traverse(obj => {
     if (obj.isMesh && obj.material) { obj.material.opacity = 1.0; obj.material.transparent = false; }
   });
+  // Keep thruster glow hidden after traverse reset (it's transparent by default)
+  if (thrusterGlowRef) { thrusterGlowRef.material.opacity = 0; thrusterGlowRef.material.transparent = true; }
   crashed         = false;
   crashTimer      = 0;
   spaceDying      = false;
@@ -5229,6 +5372,9 @@ function reset() {
     pp.mesh.visible = true;
     for (const m of pp.allMats) m.opacity = m._baseOpacity;
   }
+
+  // Re-show joystick ghost hint on mobile after respawn
+  if (window._showJoystickHint) window._showJoystickHint();
 }
 
 function updateMovers() {
@@ -5322,24 +5468,40 @@ function updateShadow() {
     const scale  = Math.max(0, 1.0 - height / 10.0);
     // Place shadow on the visual surface (collision top + visual cap offset + z-fight clearance)
     shadowMesh.position.set(px, bestTop + bestVtop + 0.03, pz);
-    shadowMesh.scale.setScalar(scale * 1.3 + 0.15);
-    shadowMat.opacity  = 0.38 * scale;
+    shadowMesh.scale.setScalar(scale * 0.9 + 0.08);
+    shadowMat.opacity  = 0.18 * scale;
     shadowMesh.visible = true;
   } else {
     shadowMesh.visible = false;
   }
 }
 
+const _thrusterWorldPos = new THREE.Vector3();
 function updateTrail() {
   const flatSpeed = Math.hypot(vel.x, vel.z);
   trailFrame++;
   if (trailFrame % 2 === 0 && flatSpeed > 2.0) {
-    trailHistory.unshift({ x: player.position.x, y: player.position.y + 0.3, z: player.position.z });
+    // Trail spawns from the thruster position (rear of body) in world space
+    thrusterGlowRef.getWorldPosition(_thrusterWorldPos);
+    const spread = 0.05;
+    trailHistory.unshift({
+      x: _thrusterWorldPos.x + (Math.random() - 0.5) * spread,
+      y: _thrusterWorldPos.y + (Math.random() - 0.5) * spread * 0.4,
+      z: _thrusterWorldPos.z + (Math.random() - 0.5) * spread,
+      life: 1.0,   // full brightness at spawn
+    });
     if (trailHistory.length > TRAIL_LEN) trailHistory.pop();
+  }
+  // Age all particles — fade out over ~0.8 seconds
+  for (let i = trailHistory.length - 1; i >= 0; i--) {
+    trailHistory[i].life -= 0.02;          // ~1.2s full decay at 60fps
+    if (trailHistory[i].life <= 0) { trailHistory.splice(i, 1); }
   }
   for (let i = 0; i < TRAIL_LEN; i++) {
     if (i < trailHistory.length) {
-      const fade = 1.0 - i / TRAIL_LEN;
+      const positionFade = Math.pow(1.0 - i / TRAIL_LEN, 2.5);
+      const ageFade = Math.max(0, trailHistory[i].life);
+      const fade = positionFade * ageFade;
       trailPosArr[i*3]   = trailHistory[i].x;
       trailPosArr[i*3+1] = trailHistory[i].y;
       trailPosArr[i*3+2] = trailHistory[i].z;
@@ -5447,10 +5609,14 @@ function update(dt) {
   let throttle = 0;
   if (keys.has("ArrowUp")    || keys.has("KeyW") || keys.has("w")) throttle -= 1;
   if (keys.has("ArrowDown")  || keys.has("KeyS") || keys.has("s")) throttle += 1;
+  // Virtual thumbstick Y: screen-up (negative) = forward, screen-down (positive) = backward
+  throttle = Math.max(-1, Math.min(1, throttle + joystickY));
 
   const turnSpeed = 2.6;
   if (keys.has("ArrowLeft")  || keys.has("KeyA") || keys.has("a")) yaw += turnSpeed * dt;
   if (keys.has("ArrowRight") || keys.has("KeyD") || keys.has("d")) yaw -= turnSpeed * dt;
+  // Virtual thumbstick X: right (positive) = yaw decreases (right turn)
+  yaw -= joystickX * turnSpeed * dt;
 
   facing.set(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
 
@@ -5682,6 +5848,13 @@ function update(dt) {
     const spin = flatSpeed * dt * 6;
     wheelLRef.rotation.x += spin;
     wheelRRef.rotation.x += spin;
+  }
+
+  // ── Thruster glow — subtle pulse when moving ──
+  if (thrusterGlowRef) {
+    const targetGlow = flatSpeed > 1.5 ? 0.30 + 0.12 * Math.sin(time * 6) : 0.0;
+    thrusterGlowRef.material.opacity += (targetGlow - thrusterGlowRef.material.opacity) * Math.min(1, dt * 8);
+    thrusterGlowRef.material.transparent = true;
   }
 
   // ── Squash & stretch — lerp back to neutral ──

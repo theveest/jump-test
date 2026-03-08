@@ -25,6 +25,7 @@
         padding: 10px 12px; border-radius: 10px; backdrop-filter: blur(6px);
         max-width: 360px; user-select: none;
       }
+      @media (pointer: coarse) { #hud { display: none; } }
       kbd {
         background: #111827; padding: 2px 6px; border-radius: 6px;
         border: 1px solid #30363d; margin-right: 2px;
@@ -163,30 +164,62 @@
         #progress-area { bottom: 190px; }
       }
 
-      #dpad {
+      /* ── Virtual thumbstick ── */
+      #joystick-zone {
         position: absolute;
-        bottom: 28px; left: 28px;
-        width: 154px; height: 154px;
-        pointer-events: none;
-      }
-      .dpad-btn {
-        position: absolute;
-        width: 52px; height: 52px;
-        background: rgba(255,255,255,.14);
-        border: 1px solid rgba(255,255,255,.28);
-        border-radius: 12px;
-        color: #fff; font-size: 20px; line-height: 1;
-        display: flex; align-items: center; justify-content: center;
+        bottom: 0; left: 0;
+        width: 55%; height: 55%;
         pointer-events: all;
+        touch-action: none;
         -webkit-tap-highlight-color: transparent;
-        user-select: none; touch-action: none;
-        cursor: pointer; transition: background .08s;
+        user-select: none;
       }
-      .dpad-btn:active { background: rgba(255,255,255,.34); }
-      #btn-up    { top: 0;    left: 51px; }
-      #btn-left  { top: 51px; left: 0;    }
-      #btn-right { top: 51px; left: 102px; }
-      #btn-down  { top: 102px; left: 51px; }
+      #joystick-base {
+        position: fixed;
+        width: 130px; height: 130px;
+        border-radius: 50%;
+        background: rgba(255,255,255,.08);
+        border: 2px solid rgba(255,255,255,.20);
+        pointer-events: none;
+        display: none;
+        z-index: 11;
+        transform: translate(-50%, -50%);
+      }
+      #joystick-base.active { display: block; }
+      #joystick-knob {
+        position: absolute;
+        width: 54px; height: 54px;
+        left: 50%; top: 50%;
+        border-radius: 50%;
+        background: rgba(255,255,255,.22);
+        border: 2px solid rgba(255,255,255,.40);
+        transform: translate(-50%, -50%);
+        box-shadow: 0 0 10px rgba(255,255,255,.10);
+      }
+
+      /* ── Joystick ghost hint (discoverability) ── */
+      #joystick-hint {
+        position: absolute;
+        bottom: 100px; left: 60px;
+        display: flex; flex-direction: column;
+        align-items: center; gap: 10px;
+        pointer-events: none;
+        transition: opacity 0.6s ease-out;
+        z-index: 9;
+      }
+      #joystick-hint-ring {
+        width: 100px; height: 100px;
+        border-radius: 50%;
+        border: 2px dashed rgba(255,255,255,.25);
+        background: rgba(255,255,255,.04);
+      }
+      #joystick-hint-label {
+        font: 600 11px/1 system-ui;
+        color: rgba(255,255,255,.40);
+        letter-spacing: .10em;
+        text-transform: uppercase;
+        text-shadow: 0 1px 4px rgba(0,0,0,.7);
+      }
 
       #right-controls {
         position: absolute;
@@ -341,12 +374,17 @@
 
     <!-- Mobile touch controls -->
     <div id="mobile-controls">
-      <div id="dpad">
-        <button id="btn-up"    class="dpad-btn">▲</button>
-        <button id="btn-left"  class="dpad-btn">◀</button>
-        <button id="btn-right" class="dpad-btn">▶</button>
-        <button id="btn-down"  class="dpad-btn">▼</button>
+      <!-- Joystick ghost hint (fades after first touch) -->
+      <div id="joystick-hint">
+        <div id="joystick-hint-ring"></div>
+        <div id="joystick-hint-label">DRAG TO MOVE</div>
       </div>
+      <!-- Dynamic thumbstick: touch zone (lower-left) + hidden visuals -->
+      <div id="joystick-zone"></div>
+      <div id="joystick-base">
+        <div id="joystick-knob"></div>
+      </div>
+      <!-- Right-side buttons (unchanged) -->
       <div id="right-controls">
         <button id="btn-jump">JUMP</button>
         <button id="btn-reset-mobile">R</button>
