@@ -164,6 +164,7 @@ let stormDebrisData     = [];   // enhanced debris tracking
 // Per-level platform material personality — set in loadLevel before building
 let levelMat = { roughness: 0.55, metalness: 0.05, emissive: 0x000000, emissiveInt: 0.0, edgeColor: 0x000000, edgeOpacity: 0.20 };
 let neonUnderglow = false; // true only during Level 5 (Crystal Cave) build
+let neonUnderglowCount = 0; // counter — only every 4th neon platform gets a PointLight (perf)
 
 // Lighten a hex color by amt (0–1)
 function lightenHex(hex, amt) {
@@ -247,10 +248,11 @@ function buildNeonVisual(w, h, d, color) {
   cap.position.y = h * 0.5 + capH * 0.5 + 0.001; // +0.001 so cap bottom clears body top face
   group.add(cap);
 
-  // Underglow point light — Level 5 Crystal Cave only
-  // Casts the platform's color downward onto cave floor and crystals below
-  if (neonUnderglow) {
-    const light = new THREE.PointLight(color, 2.2, 24, 1.8);
+  // Underglow point light — Crystal Cave / Neon City only
+  // Only every 4th neon platform gets a light to limit PointLight count (perf).
+  // Wider range + higher intensity compensates for fewer lights.
+  if (neonUnderglow && (neonUnderglowCount++ % 4 === 0)) {
+    const light = new THREE.PointLight(color, 3.0, 38, 1.8);
     light.position.y = -h * 0.5 - 0.5;
     group.add(light);
   }
@@ -1288,19 +1290,19 @@ function buildCaveBackground() {
   const ceilY  =  22;
   const floorY = -18;
 
-  // Floor
+  // Floor — MeshBasicMaterial (dark surface, no lighting needed — perf)
   const floorMesh = new THREE.Mesh(
     new THREE.PlaneGeometry(300, 360),
-    new THREE.MeshStandardMaterial({ color: 0x080810, roughness: 1.0 })
+    new THREE.MeshBasicMaterial({ color: 0x080810 })
   );
   floorMesh.rotation.x = -Math.PI * 0.5;
   floorMesh.position.set(0, floorY, -112);
   caveGroup.add(floorMesh);
 
-  // Ceiling
+  // Ceiling — MeshBasicMaterial (dark surface, no lighting needed — perf)
   const ceilMesh = new THREE.Mesh(
     new THREE.PlaneGeometry(300, 360),
-    new THREE.MeshStandardMaterial({ color: 0x060608, roughness: 1.0 })
+    new THREE.MeshBasicMaterial({ color: 0x060608 })
   );
   ceilMesh.rotation.x = Math.PI * 0.5;
   ceilMesh.position.set(0, ceilY, -112);
@@ -1315,9 +1317,10 @@ function buildCaveBackground() {
       const col = crystalColors[Math.floor(rng() * crystalColors.length)];
       const h   = (3 + rng() * 9) * scale;
       const r   = (0.25 + rng() * 0.55) * scale;
+      // MeshBasicMaterial — crystals are self-lit, don't need per-pixel lighting (perf)
       const c   = new THREE.Mesh(
         new THREE.CylinderGeometry(r * 0.07, r, h, 5),
-        new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.55, roughness: 0.15, transparent: true, opacity: 0.82 })
+        new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.82 })
       );
       c.position.set((rng() - 0.5) * 4 * scale, h * 0.5, (rng() - 0.5) * 4 * scale);
       c.rotation.set((rng() - 0.5) * 0.35, rng() * Math.PI * 2, (rng() - 0.5) * 0.35);
@@ -1333,18 +1336,19 @@ function buildCaveBackground() {
     const col = crystalColors[Math.floor(rng() * crystalColors.length)];
     const len = 2 + rng() * 9;
     const rad = 0.2 + rng() * 0.85;
+    // MeshBasicMaterial — stalactites are decorative background, don't need per-pixel lighting (perf)
     const s = new THREE.Mesh(
       new THREE.CylinderGeometry(rad, rad * 0.06, len, 5),
-      new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.28, roughness: 0.2, transparent: true, opacity: 0.72 })
+      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.72 })
     );
     s.position.set((rng() - 0.5) * 120, ceilY - len * 0.5, rng() * -248 + 15);
     caveGroup.add(s);
   }
 
-  // Coloured point lights — crystal glow
-  const plCols = [0x00AAFF, 0x8800FF, 0x00FFAA, 0xFF00AA, 0x0088FF, 0xAA00FF, 0x00FFDD];
-  [[-22,-8,-40],[25,-8,-85],[-18,-8,-130],[22,-8,-175],[-15,-8,-215]].forEach(([px,py,pz], i) => {
-    const pl = new THREE.PointLight(plCols[i % plCols.length], 2.2, 55);
+  // Coloured point lights — crystal glow (3 lights, wider range — perf)
+  const plCols = [0x00AAFF, 0x8800FF, 0x00FFAA];
+  [[-15,-8,-50],[10,-8,-130],[-10,-8,-200]].forEach(([px,py,pz], i) => {
+    const pl = new THREE.PointLight(plCols[i], 3.0, 80);
     pl.position.set(px, py, pz);
     caveGroup.add(pl);
   });
@@ -4422,6 +4426,7 @@ function loadLevel(n) {
   else              levelMat = { roughness: 0.15, metalness: 0.05, emissive: 0x22AACC, emissiveInt: 0.35, edgeColor: 0x00CCEE, edgeOpacity: 0.90, transparent: true, opacity: 0.92, colorTint: 0x4FBDD0, tintStrength: 0.65, iceVisual: true }; // frosty ice
 
   neonUnderglow = (n === 5 || n === 7);
+  neonUnderglowCount = 0;
   if      (n === 0) buildLevel0();
   else if (n === 1) buildLevel1();
   else if (n === 2) buildLevel2();
