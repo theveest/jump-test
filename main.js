@@ -1604,95 +1604,146 @@ function buildStormBackground() {
     { ...ceil2, baseX: 0, baseZ: -85, oscSpeed: 0.025, uvSpeed: 0.0012 },
   ];
 
-  // ── Storm cloud ocean — deep, layered cloud system below platforms ──
-  // Uses a dedicated builder that paints brighter canvas blobs and sets
-  // material color to white (0xffffff) so the texture isn't darkened by
-  // the color×texture multiplication that makes makeStormCloud layers
-  // work as subtle overlays. The ocean layers must be SEEN from above.
-  function makeOceanCloud(cfg) {
-    const { blobCount, blobMaxR, baseColor, blobColor, opacity,
-            yPos, size, segs, waveAmp, seed, repeatS, blobOpacity } = cfg;
-    let _cs = seed;
-    function cr() { _cs = (_cs * 16807) % 2147483647; return (_cs - 1) / 2147483646; }
+  // ── Storm cloud masses — individual dark cloud bodies below platforms ──
+  // Instead of flat fog sheets, scatter many individual cloud mass meshes
+  // at varied positions/heights/tilts for an organic storm sky below.
+  // NO flat planes, NO visible horizon line, NO fog.
+  const stormCloudPalette = [0x0d1b2f, 0x162943, 0x2b4a70, 0x3a5f90];
 
-    const cc = document.createElement("canvas"); cc.width = 512; cc.height = 512;
-    const cctx = cc.getContext("2d");
-    // Dark base — heavier fill so the whole plane reads as cloud
-    const br = (baseColor >> 16) & 0xff, bg = (baseColor >> 8) & 0xff, bb = baseColor & 0xff;
-    cctx.fillStyle = `rgba(${br},${bg},${bb},0.5)`;
-    cctx.fillRect(0, 0, 512, 512);
-    // Bright storm cloud blobs — higher alpha for visibility from above
-    const bo = blobOpacity || 0.75;
+  function makeCloudMass(cfg) {
+    const { x, y, z, w, h, opacity, tiltX, tiltZ, seed, blobCount } = cfg;
+    let _s = seed;
+    function rng() { _s = (_s * 16807) % 2147483647; return (_s - 1) / 2147483646; }
+
+    const cSize = 256;
+    const cv = document.createElement("canvas"); cv.width = cSize; cv.height = cSize;
+    const ctx = cv.getContext("2d");
+    ctx.clearRect(0, 0, cSize, cSize); // transparent background
+
+    // Draw cloud body — concentrated blobs creating a soft cloud shape
     for (let i = 0; i < blobCount; i++) {
-      const bx = cr() * 512, by = cr() * 512;
-      const blobR = (blobMaxR * 0.35) + cr() * (blobMaxR * 0.65);
-      const grad = cctx.createRadialGradient(bx, by, 0, bx, by, blobR);
-      const cr2 = (blobColor >> 16) & 0xff, cg2 = (blobColor >> 8) & 0xff, cb2 = blobColor & 0xff;
-      grad.addColorStop(0,   `rgba(${cr2},${cg2},${cb2},${bo})`);
-      grad.addColorStop(0.35,`rgba(${cr2},${cg2},${cb2},${bo * 0.55})`);
-      grad.addColorStop(0.7, `rgba(${cr2},${cg2},${cb2},${bo * 0.2})`);
-      grad.addColorStop(1,   `rgba(${cr2},${cg2},${cb2},0)`);
-      cctx.fillStyle = grad;
-      cctx.fillRect(bx - blobR, by - blobR, blobR * 2, blobR * 2);
+      const angle = rng() * Math.PI * 2;
+      const dist = rng() * rng() * cSize * 0.3; // quadratic = more centered
+      const bx = cSize / 2 + Math.cos(angle) * dist;
+      const by = cSize / 2 + Math.sin(angle) * dist * 0.6; // flattened vertically
+      const blobR = cSize * (0.12 + rng() * 0.22);
+
+      // Pick from palette — bias toward brighter tones for visibility
+      const pIdx = Math.min(3, Math.floor(rng() * 3 + 0.5));
+      const pc = stormCloudPalette[pIdx];
+      const pr = (pc >> 16) & 0xff, pg = (pc >> 8) & 0xff, pb = pc & 0xff;
+      const alpha = 0.55 + rng() * 0.40;
+
+      const grad = ctx.createRadialGradient(bx, by, 0, bx, by, blobR);
+      grad.addColorStop(0,    `rgba(${pr},${pg},${pb},${alpha.toFixed(2)})`);
+      grad.addColorStop(0.35, `rgba(${pr},${pg},${pb},${(alpha * 0.6).toFixed(2)})`);
+      grad.addColorStop(0.65, `rgba(${pr},${pg},${pb},${(alpha * 0.2).toFixed(2)})`);
+      grad.addColorStop(1,    `rgba(${pr},${pg},${pb},0)`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, cSize, cSize);
     }
-    const tex = new THREE.CanvasTexture(cc);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(repeatS, repeatS);
-    // color: 0xffffff — NO multiplication, let texture colors show at full brightness
+
+    const tex = new THREE.CanvasTexture(cv);
+    // color: 0xffffff — NO multiplication, palette colors show at full brightness
     const mat = new THREE.MeshBasicMaterial({
       map: tex, color: 0xffffff, transparent: true, opacity,
       depthWrite: false, side: THREE.DoubleSide, fog: false
     });
-    const geo = new THREE.PlaneGeometry(size, size, segs, segs);
-    const pos = geo.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      const lx = pos.getX(i), ly = pos.getY(i);
-      const d = Math.sin(lx * 0.014 + seed * 2.7) * Math.cos(ly * 0.011 + seed * 1.3) * waveAmp
-              + Math.sin(lx * 0.027 + ly * 0.019 + seed * 4.1) * waveAmp * 0.35
-              + (cr() - 0.5) * waveAmp * 0.12;
-      pos.setZ(i, d);
-    }
-    geo.computeVertexNormals();
+    const geo = new THREE.PlaneGeometry(w, h);
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.position.set(0, yPos, -85);
+    mesh.rotation.x = -Math.PI / 2 + tiltX;
+    mesh.rotation.z = tiltZ;
+    mesh.position.set(x, y, z);
     mesh.renderOrder = 1;
     stormGroup.add(mesh);
     return { mesh, mat };
   }
 
-  const fogCfgs = [
-    // Upper cloud tops — just below platform level, densest, brightest
-    { blobCount: 70, blobMaxR: 160, baseColor: 0x15263f, blobColor: 0x2b4f7a,
-      opacity: 0.55, yPos: -4,  size: 1200, segs: 48, waveAmp: 3.5, seed: 3317, repeatS: 3,
-      blobOpacity: 0.80, oscSpeed: 0.10, uvSpeed: 0.005, windMult: 0.20 },
-    // Upper-mid — offset pattern
-    { blobCount: 60, blobMaxR: 140, baseColor: 0x122240, blobColor: 0x244468,
-      opacity: 0.50, yPos: -8,  size: 1400, segs: 44, waveAmp: 3.0, seed: 7823, repeatS: 4,
-      blobOpacity: 0.75, oscSpeed: 0.08, uvSpeed: 0.004, windMult: 0.30 },
-    // Mid layer — larger, creates depth
-    { blobCount: 55, blobMaxR: 170, baseColor: 0x0e1c34, blobColor: 0x1e3858,
-      opacity: 0.45, yPos: -14, size: 1600, segs: 40, waveAmp: 2.5, seed: 2209, repeatS: 5,
-      blobOpacity: 0.70, oscSpeed: 0.06, uvSpeed: 0.003, windMult: 0.35 },
-    // Deep mid — darkening
-    { blobCount: 50, blobMaxR: 180, baseColor: 0x0b1628, blobColor: 0x162c48,
-      opacity: 0.38, yPos: -22, size: 1800, segs: 36, waveAmp: 2.0, seed: 6641, repeatS: 6,
-      blobOpacity: 0.65, oscSpeed: 0.04, uvSpeed: 0.002, windMult: 0.25 },
-    // Deep — large, muted
-    { blobCount: 45, blobMaxR: 190, baseColor: 0x081220, blobColor: 0x122438,
-      opacity: 0.30, yPos: -30, size: 2000, segs: 32, waveAmp: 1.5, seed: 4455, repeatS: 7,
-      blobOpacity: 0.55, oscSpeed: 0.03, uvSpeed: 0.0015, windMult: 0.15 },
-    // Abyss — deepest, faintest
-    { blobCount: 35, blobMaxR: 200, baseColor: 0x060e1a, blobColor: 0x0e1c2e,
-      opacity: 0.22, yPos: -40, size: 2200, segs: 28, waveAmp: 1.0, seed: 9912, repeatS: 8,
-      blobOpacity: 0.45, oscSpeed: 0.02, uvSpeed: 0.001, windMult: 0.10 },
-  ];
+  // Seeded PRNG for deterministic cloud placement
+  let _cloudRng = 50001;
+  function cloudRng() { _cloudRng = (_cloudRng * 16807) % 2147483647; return (_cloudRng - 1) / 2147483646; }
+
   stormFogLayers = [];
-  for (const fc of fogCfgs) {
-    const layer = makeOceanCloud(fc);
+  let cloudSeed = 60000;
+
+  // Tier 1: Near clouds — just below platforms, smaller, denser, higher opacity
+  for (let i = 0; i < 14; i++) {
+    cloudSeed += 137;
+    const x = (cloudRng() - 0.5) * 180;
+    const y = -3 - cloudRng() * 5;
+    const z = -10 - cloudRng() * 170;
+    const w = 40 + cloudRng() * 60;
+    const h = 30 + cloudRng() * 50;
+    const layer = makeCloudMass({
+      x, y, z, w, h,
+      opacity: 0.65 + cloudRng() * 0.25,
+      tiltX: (cloudRng() - 0.5) * 0.2,
+      tiltZ: (cloudRng() - 0.5) * 0.25,
+      seed: cloudSeed,
+      blobCount: 14 + Math.floor(cloudRng() * 8)
+    });
     stormFogLayers.push({
-      ...layer, baseX: 0, baseZ: -85,
-      oscSpeed: fc.oscSpeed, uvSpeed: fc.uvSpeed, windMult: fc.windMult
+      ...layer, baseX: x, baseY: y, baseZ: z,
+      oscSpeedX: 0.03 + cloudRng() * 0.04,
+      oscSpeedZ: 0.02 + cloudRng() * 0.03,
+      oscAmpX: 1.5 + cloudRng() * 2.5,
+      oscAmpZ: 1.0 + cloudRng() * 2.0,
+      windMult: 0.15 + cloudRng() * 0.15,
+      phase: cloudRng() * Math.PI * 2,
+    });
+  }
+
+  // Tier 2: Mid clouds — larger, more spread out, medium opacity
+  for (let i = 0; i < 12; i++) {
+    cloudSeed += 251;
+    const x = (cloudRng() - 0.5) * 200;
+    const y = -10 - cloudRng() * 8;
+    const z = -10 - cloudRng() * 170;
+    const w = 80 + cloudRng() * 80;
+    const h = 60 + cloudRng() * 60;
+    const layer = makeCloudMass({
+      x, y, z, w, h,
+      opacity: 0.50 + cloudRng() * 0.20,
+      tiltX: (cloudRng() - 0.5) * 0.15,
+      tiltZ: (cloudRng() - 0.5) * 0.2,
+      seed: cloudSeed,
+      blobCount: 16 + Math.floor(cloudRng() * 8)
+    });
+    stormFogLayers.push({
+      ...layer, baseX: x, baseY: y, baseZ: z,
+      oscSpeedX: 0.02 + cloudRng() * 0.03,
+      oscSpeedZ: 0.015 + cloudRng() * 0.025,
+      oscAmpX: 2.0 + cloudRng() * 3.0,
+      oscAmpZ: 1.5 + cloudRng() * 2.5,
+      windMult: 0.20 + cloudRng() * 0.15,
+      phase: cloudRng() * Math.PI * 2,
+    });
+  }
+
+  // Tier 3: Deep clouds — largest, faintest, slowest for depth
+  for (let i = 0; i < 10; i++) {
+    cloudSeed += 373;
+    const x = (cloudRng() - 0.5) * 240;
+    const y = -20 - cloudRng() * 12;
+    const z = -20 - cloudRng() * 170;
+    const w = 120 + cloudRng() * 130;
+    const h = 90 + cloudRng() * 100;
+    const layer = makeCloudMass({
+      x, y, z, w, h,
+      opacity: 0.35 + cloudRng() * 0.15,
+      tiltX: (cloudRng() - 0.5) * 0.12,
+      tiltZ: (cloudRng() - 0.5) * 0.15,
+      seed: cloudSeed,
+      blobCount: 18 + Math.floor(cloudRng() * 10)
+    });
+    stormFogLayers.push({
+      ...layer, baseX: x, baseY: y, baseZ: z,
+      oscSpeedX: 0.01 + cloudRng() * 0.02,
+      oscSpeedZ: 0.008 + cloudRng() * 0.015,
+      oscAmpX: 3.0 + cloudRng() * 4.0,
+      oscAmpZ: 2.0 + cloudRng() * 3.0,
+      windMult: 0.10 + cloudRng() * 0.10,
+      phase: cloudRng() * Math.PI * 2,
     });
   }
 
@@ -1911,27 +1962,6 @@ function buildStormBackground() {
         hasFlash: cfg.flash, flashDur: 0,
         nextFlash: 5 + Math.random() * 10
       });
-    }
-  }
-
-  // ── Platform-level atmospheric haze ──
-  {
-    const hazeConfigs = [
-      { y: 3,  opacity: 0.10, size: 600, color: 0x0d1a2e },
-      { y: 1,  opacity: 0.07, size: 700, color: 0x0a1525 },
-    ];
-    stormHazePlanes = [];
-    for (const hc of hazeConfigs) {
-      const hMat = new THREE.MeshBasicMaterial({
-        color: hc.color, transparent: true, opacity: hc.opacity,
-        depthWrite: false, side: THREE.DoubleSide, fog: false
-      });
-      const hMesh = new THREE.Mesh(new THREE.PlaneGeometry(hc.size, hc.size), hMat);
-      hMesh.rotation.x = -Math.PI / 2;
-      hMesh.position.set(0, hc.y, -85);
-      hMesh.renderOrder = 2;
-      stormGroup.add(hMesh);
-      stormHazePlanes.push({ mesh: hMesh, mat: hMat, baseOpacity: hc.opacity });
     }
   }
 
@@ -6028,15 +6058,18 @@ function updateStorm(dt, countdown) {
     cl.mesh.position.x = cl.baseX + Math.sin(time * cl.oscSpeed + 1.5) * 4;
     cl.mesh.position.z = cl.baseZ + Math.cos(time * cl.oscSpeed * 0.6) * 3;
   }
+  // ── Animate individual storm cloud masses — position drift + wind push ──
   for (const fl of stormFogLayers) {
-    // Wind-driven UV scroll: base drift + wind push per layer
-    const windUV = windActive ? windForceX * (fl.windMult || 0.2) * 0.003 : 0;
-    if (fl.mat.map) {
-      fl.mat.map.offset.x -= (fl.uvSpeed + windUV) * dt;
-      fl.mat.map.offset.y -= fl.uvSpeed * 0.3 * dt; // subtle z-axis drift
-    }
-    fl.mesh.position.x = fl.baseX + Math.sin(time * fl.oscSpeed + 0.8) * 5;
-    fl.mesh.position.z = fl.baseZ + Math.cos(time * fl.oscSpeed * 0.7 + 0.5) * 3;
+    // Wind pushes clouds gradually in wind direction
+    if (windActive) fl.baseX += windForceX * fl.windMult * dt;
+    // Recycle clouds that drift too far off-screen
+    if (fl.baseX > 160) fl.baseX -= 320;
+    if (fl.baseX < -160) fl.baseX += 320;
+    // Sinusoidal drift creates organic floating motion
+    fl.mesh.position.x = fl.baseX + Math.sin(time * fl.oscSpeedX + fl.phase) * fl.oscAmpX;
+    fl.mesh.position.z = fl.baseZ + Math.cos(time * fl.oscSpeedZ + fl.phase * 0.7) * fl.oscAmpZ;
+    // Subtle vertical bob — clouds breathe up and down
+    fl.mesh.position.y = fl.baseY + Math.sin(time * fl.oscSpeedX * 0.5 + fl.phase * 1.3) * 0.5;
   }
   for (const sw of stormWallClouds) {
     if (sw.mat.map) sw.mat.map.offset.x -= sw.uvSpeed * dt;
@@ -6058,13 +6091,6 @@ function updateStorm(dt, countdown) {
       dc.nextFlash -= dt;
       if (dc.nextFlash <= 0) dc.flashDur = 0.5;
     }
-  }
-
-  // ── Atmospheric haze drift ──
-  for (const hp of stormHazePlanes) {
-    hp.mesh.position.x = Math.sin(time * 0.03) * 8;
-    hp.mesh.position.z = -85 + Math.cos(time * 0.02) * 5;
-    hp.mat.opacity = hp.baseOpacity + stormRainIntensity * 0.03;
   }
 
   // ── Enhanced storm debris animation ──
