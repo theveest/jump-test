@@ -4,7 +4,7 @@ import { RoundedBoxGeometry } from "https://unpkg.com/three@0.160.0/examples/jsm
 
 // ===== Firebase =====
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
-import { getFirestore, collection, addDoc, query, where, orderBy, limit, getDocs, serverTimestamp }
+import { getFirestore, collection, addDoc, getDocs, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
 
 const firebaseApp = initializeApp({
@@ -5098,16 +5098,19 @@ function escHtml(str) {
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 // ── Firestore leaderboard helpers ──
+// Path: leaderboard/level_N/scores/{auto-id}  (matches Firestore rules)
 async function saveScore(level, name, time) {
   try {
-    await addDoc(collection(db, "scores"), { level, name, time, ts: serverTimestamp() });
+    await addDoc(collection(db, "leaderboard", `level_${level}`, "scores"), { name, time, ts: serverTimestamp() });
   } catch (e) { console.warn("Firestore write failed:", e); }
 }
 async function getTopScores(level, max = 5) {
   try {
-    const q = query(collection(db, "scores"), where("level", "==", level), orderBy("time"), limit(max));
-    const snap = await getDocs(q);
-    return snap.docs.map(d => ({ name: d.data().name, time: d.data().time }));
+    const snap = await getDocs(collection(db, "leaderboard", `level_${level}`, "scores"));
+    return snap.docs
+      .map(d => ({ name: d.data().name, time: d.data().time }))
+      .sort((a, b) => a.time - b.time)
+      .slice(0, max);
   } catch (e) {
     console.warn("Firestore read failed:", e);
     return [];
