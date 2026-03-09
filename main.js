@@ -5102,7 +5102,7 @@ function showLeaderboard(level, top5, myTime, myIdx) {
   }
   lbTable.innerHTML = rows + "</tbody>";
   lbNotTop.textContent = myIdx === -1 ? `Your time: ${formatTime(myTime)} — not in top 5` : "";
-  const isMobile = matchMedia("(pointer: coarse)").matches;
+  const isMobile = "ontouchstart" in window || navigator.maxTouchPoints > 0;
   const action = isMobile ? "Tap to continue" : "Press R";
   lbHint.textContent   = level < 9 ? `${action} for Level ${level + 1}` : `${action} to play again`;
   lbOverlay.classList.add("active");
