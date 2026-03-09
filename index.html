@@ -287,6 +287,22 @@
         transition: background .12s;
       }
       #skin-play:hover { background: #ffe84d; }
+
+      /* ── Leaderboard tap-to-continue (cursor hint) ── */
+      #lb-overlay .modal-card { cursor: pointer; }
+
+      /* ── Mobile: skin selector responsive fix ── */
+      @media (max-width: 480px) {
+        .modal-card { min-width: unset; max-width: calc(100vw - 32px); padding: 24px 16px; }
+        #skin-overlay .modal-card { max-width: calc(100vw - 32px); }
+        #skin-overlay h2 { font-size: 17px; margin-bottom: 18px; }
+        #skin-logo { max-width: 280px; }
+        .skin-swatches { gap: 6px; }
+        .skin-swatch { padding: 6px 6px; }
+        .swatch-circle { width: 36px; height: 36px; }
+        .swatch-label { font-size: 10px; }
+        #skin-play { padding: 10px 36px; }
+      }
     </style>
   </head>
   <body>

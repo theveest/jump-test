@@ -5102,8 +5102,20 @@ function showLeaderboard(level, top5, myTime, myIdx) {
   }
   lbTable.innerHTML = rows + "</tbody>";
   lbNotTop.textContent = myIdx === -1 ? `Your time: ${formatTime(myTime)} — not in top 5` : "";
-  lbHint.textContent   = level < 9 ? `Press R for Level ${level + 1}` : "Press R to play again";
+  const isMobile = matchMedia("(pointer: coarse)").matches;
+  const action = isMobile ? "Tap to continue" : "Press R";
+  lbHint.textContent   = level < 9 ? `${action} for Level ${level + 1}` : `${action} to play again`;
   lbOverlay.classList.add("active");
+
+  // Allow tap/click on the overlay to advance (essential for mobile)
+  lbOverlay.onclick = () => {
+    lbOverlay.classList.remove("active");
+    lbOverlay.onclick = null;
+    won = false;
+    const next = level < 9 ? level + 1 : 1;
+    loadLevel(next);
+    reset();
+  };
 }
 function showNameEntry(finalTime) {
   levelCompleteMsg.textContent  = `Level ${currentLevel} complete!`;
