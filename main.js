@@ -2,6 +2,21 @@ import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 import { Sky } from "https://unpkg.com/three@0.160.0/examples/jsm/objects/Sky.js";
 import { RoundedBoxGeometry } from "https://unpkg.com/three@0.160.0/examples/jsm/geometries/RoundedBoxGeometry.js";
 
+// ===== Firebase =====
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
+import { getFirestore, collection, addDoc, query, where, orderBy, limit, getDocs, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
+
+const firebaseApp = initializeApp({
+  apiKey: "AIzaSyCi4utdN5SoNpRJzOBH16bWS0Aidk2R7Aw",
+  authDomain: "jump-test-3333.firebaseapp.com",
+  projectId: "jump-test-3333",
+  storageBucket: "jump-test-3333.firebasestorage.app",
+  messagingSenderId: "442965028114",
+  appId: "1:442965028114:web:1f8aa409812803352217cb"
+});
+const db = getFirestore(firebaseApp);
+
 // ===== Scene / Renderer =====
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x8bbde8, 60, 220);
@@ -5082,12 +5097,21 @@ function escHtml(str) {
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
-function getLB(level) {
-  try { return JSON.parse(localStorage.getItem(`jump_lb_${level}`) || "[]"); }
-  catch { return []; }
+// ── Firestore leaderboard helpers ──
+async function saveScore(level, name, time) {
+  try {
+    await addDoc(collection(db, "scores"), { level, name, time, ts: serverTimestamp() });
+  } catch (e) { console.warn("Firestore write failed:", e); }
 }
-function saveLB(level, entries) {
-  localStorage.setItem(`jump_lb_${level}`, JSON.stringify(entries));
+async function getTopScores(level, max = 5) {
+  try {
+    const q = query(collection(db, "scores"), where("level", "==", level), orderBy("time"), limit(max));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ name: d.data().name, time: d.data().time }));
+  } catch (e) {
+    console.warn("Firestore read failed:", e);
+    return [];
+  }
 }
 function showLeaderboard(level, top5, myTime, myIdx) {
   lbTitle.textContent = `Level ${level} — Top Times`;
@@ -5125,16 +5149,13 @@ function showNameEntry(finalTime) {
   setTimeout(() => nameInput.focus(), 60);
   nameSubmit.onclick  = doSubmit;
   nameInput.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); doSubmit(); } };
-  function doSubmit() {
-    const name     = nameInput.value.trim() || "Anonymous";
-    const lb       = getLB(currentLevel);
-    const myEntry  = { name, time: finalTime };
-    lb.push(myEntry);
-    lb.sort((a, b) => a.time - b.time);
-    const top5  = lb.slice(0, 5);
-    saveLB(currentLevel, top5);
-    const myIdx = top5.indexOf(myEntry);
+  async function doSubmit() {
+    const name = nameInput.value.trim() || "Anonymous";
     nameOverlay.classList.remove("active");
+    // Write score to Firestore, then fetch shared top 5
+    await saveScore(currentLevel, name, finalTime);
+    const top5 = await getTopScores(currentLevel);
+    const myIdx = top5.findIndex(e => e.name === name && e.time === finalTime);
     showLeaderboard(currentLevel, top5, finalTime, myIdx);
   }
 }
