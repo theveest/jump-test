@@ -4,7 +4,7 @@ import { RoundedBoxGeometry } from "https://unpkg.com/three@0.160.0/examples/jsm
 
 // ===== Firebase =====
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, serverTimestamp }
+import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
 
 const firebaseApp = initializeApp({
@@ -4408,7 +4408,7 @@ function buildLevel9() {
 
 let currentLevel = 1;
 
-function loadLevel(n) {
+function loadLevel(n, skipUI = false) {
   // If skin selector is open (e.g. admin hotkey pressed), dismiss it cleanly
   if (skinSelectActive) {
     skinSelectActive = false;
@@ -4582,8 +4582,7 @@ function loadLevel(n) {
   }
 
   levelNameHud.textContent = LEVEL_NAMES[n] || "";
-  if (n === 1) showSkinSelector(1);
-  else         startCountdown(n);
+  if (!skipUI) startCountdown(n);
 }
 
 // ===== Player (Cube Rover) =====
@@ -4727,6 +4726,156 @@ const LEVEL_NAMES = {
   9: "Storm Realm",
 };
 
+const LEVEL_SHORT_NAMES = {
+  0: "Tutorial",
+  1: "Golden Hour",
+  2: "Canopy",
+  3: "Cosmic",
+  4: "Volcano",
+  5: "Crystal",
+  6: "Candy",
+  7: "Neon City",
+  8: "Ice Peaks",
+  9: "Storm",
+};
+
+const MAX_LEVEL = 9;
+
+// ===== Local Progress =====
+const PROGRESS_KEY    = "jump_progress";
+const PENDING_SYNC_KEY = "jump_pending_sync";
+
+function generatePlayerId() {
+  return "player_" + crypto.randomUUID();
+}
+
+function loadProgress() {
+  try {
+    const raw = localStorage.getItem(PROGRESS_KEY);
+    if (raw) {
+      const p = JSON.parse(raw);
+      return {
+        playerId:             p.playerId || generatePlayerId(),
+        playerName:           p.playerName || "",
+        version:              p.version ?? 1,
+        highestUnlockedLevel: p.highestUnlockedLevel ?? 1,
+        currentLevel:         p.currentLevel ?? p.highestUnlockedLevel ?? 1,
+        selectedVehicleColor: p.selectedVehicleColor || "0xEE2222",
+        updatedAt:            p.updatedAt || new Date().toISOString(),
+      };
+    }
+  } catch (e) { console.warn("Progress load failed:", e); }
+  return {
+    playerId:             generatePlayerId(),
+    playerName:           "",
+    version:              1,
+    highestUnlockedLevel: 1,
+    currentLevel:         1,
+    selectedVehicleColor: "0xEE2222",
+    updatedAt:            new Date().toISOString(),
+  };
+}
+
+function saveProgress(prog) {
+  try {
+    prog.updatedAt = new Date().toISOString();
+    localStorage.setItem(PROGRESS_KEY, JSON.stringify(prog));
+  } catch (e) { console.warn("Progress save failed:", e); }
+  // Fire-and-forget Firebase sync
+  saveProgressToFirebase(prog);
+}
+
+let progress = loadProgress();
+let highestUnlockedLevel = progress.highestUnlockedLevel;
+
+async function initProgressFromFirebase() {
+  const remote = await loadProgressFromFirebase(progress.playerId);
+  if (remote) {
+    progress = mergeProgress(progress, remote);
+    highestUnlockedLevel = progress.highestUnlockedLevel;
+    // Update local cache with merged progress (localStorage only, no Firebase re-write)
+    try {
+      localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
+    } catch (e) { console.warn("Progress cache update failed:", e); }
+  }
+}
+
+function unlockNextLevel(completedLevel) {
+  const next = completedLevel + 1;
+  // Only move forward, never backward
+  if (next > progress.highestUnlockedLevel && next <= MAX_LEVEL) {
+    progress.highestUnlockedLevel = next;
+    highestUnlockedLevel = next;
+  }
+  // Only advance currentLevel forward (replaying old levels doesn't regress)
+  if (next > progress.currentLevel && next <= MAX_LEVEL) {
+    progress.currentLevel = next;
+  }
+  saveProgress(progress);
+}
+
+function resetProgress() {
+  progress.highestUnlockedLevel = 1;
+  progress.currentLevel = 1;
+  progress.selectedVehicleColor = "0xEE2222";
+  progress.updatedAt = new Date().toISOString();
+  // Keep playerId and playerName — only reset game progress
+  highestUnlockedLevel = 1;
+  localStorage.removeItem(PENDING_SYNC_KEY);
+  saveProgress(progress);
+}
+
+// ===== Firebase Progress Sync =====
+async function saveProgressToFirebase(prog) {
+  try {
+    await setDoc(doc(db, "progress", prog.playerId), {
+      playerId:             prog.playerId,
+      playerName:           prog.playerName || "",
+      version:              prog.version ?? 1,
+      highestUnlockedLevel: prog.highestUnlockedLevel,
+      currentLevel:         prog.currentLevel,
+      selectedVehicleColor: prog.selectedVehicleColor,
+      updatedAt:            serverTimestamp(),
+    }, { merge: true });
+    // Success — clear any pending sync
+    localStorage.removeItem(PENDING_SYNC_KEY);
+  } catch (e) {
+    console.warn("Firebase progress save failed, queuing for retry:", e);
+    try { localStorage.setItem(PENDING_SYNC_KEY, JSON.stringify(prog)); } catch (_) {}
+  }
+}
+
+async function flushPendingSync() {
+  try {
+    const raw = localStorage.getItem(PENDING_SYNC_KEY);
+    if (!raw) return;
+    const pending = JSON.parse(raw);
+    await saveProgressToFirebase(pending);
+  } catch (e) { console.warn("Pending sync flush failed:", e); }
+}
+
+async function loadProgressFromFirebase(playerId) {
+  try {
+    const snap = await getDoc(doc(db, "progress", playerId));
+    if (snap.exists()) return snap.data();
+  } catch (e) { console.warn("Firebase progress load failed:", e); }
+  return null;
+}
+
+function mergeProgress(local, remote) {
+  if (!remote) return local;
+  const highest = Math.max(local.highestUnlockedLevel, remote.highestUnlockedLevel ?? 1);
+  return {
+    playerId:             local.playerId,
+    playerName:           remote.playerName || local.playerName || "",
+    version:              Math.max(local.version ?? 1, remote.version ?? 1),
+    highestUnlockedLevel: highest,
+    currentLevel:         Math.min(Math.max(local.currentLevel, remote.currentLevel ?? 1), highest),
+    selectedVehicleColor: remote.selectedVehicleColor || local.selectedVehicleColor,
+    updatedAt:            new Date().toISOString(),
+  };
+}
+
 // ===== Timer =====
 let levelTime        = 0;
 let won              = false;
@@ -4780,38 +4929,188 @@ function applyVehicleColor(hexStr) {
   trailColorB = ( hex        & 0xFF) / 255;
 }
 
-// Apply saved skin immediately on startup
+// Apply saved skin immediately on startup (progress → fallback to old SKIN_KEY)
 (function () {
-  const saved = localStorage.getItem(SKIN_KEY);
-  if (saved && SKIN_VALS[saved]) applyVehicleColor(saved);
+  const savedColor = progress.selectedVehicleColor
+    || localStorage.getItem(SKIN_KEY)
+    || "0xEE2222";
+  if (SKIN_VALS[savedColor]) applyVehicleColor(savedColor);
 })();
 
-function showSkinSelector(level) {
-  const overlay  = document.getElementById("skin-overlay");
-  const swatches = overlay.querySelectorAll(".skin-swatch");
-  const playBtn  = document.getElementById("skin-play");
+function buildLevelGrid() {
+  const grid = document.getElementById("level-grid");
+  grid.innerHTML = "";
+  for (let lvl = 1; lvl <= MAX_LEVEL; lvl++) {
+    const cell = document.createElement("div");
+    cell.className = "level-cell";
+    cell.dataset.level = String(lvl);
+
+    const num = document.createElement("div");
+    num.className = "level-num";
+    num.textContent = String(lvl);
+
+    const label = document.createElement("div");
+    label.className = "level-label";
+    label.textContent = LEVEL_SHORT_NAMES[lvl] || LEVEL_NAMES[lvl] || `Level ${lvl}`;
+
+    cell.appendChild(num);
+    cell.appendChild(label);
+    grid.appendChild(cell);
+  }
+
+  // Scroll hint (created once, persists across grid rebuilds)
+  const levels = grid.parentElement; // .home-levels
+  if (!document.getElementById("scroll-hint")) {
+    const hint = document.createElement("div");
+    hint.id = "scroll-hint";
+    hint.innerHTML = 'More levels <span id="scroll-hint-arrow">\u2193</span>';
+    levels.appendChild(hint);
+  }
+}
+
+function setupLevelScrollState() {
+  const levels = document.querySelector(".home-levels");
+  if (!levels) return;
+
+  // Clean up previous listener
+  if (levels._scrollHandler) {
+    levels.removeEventListener("scroll", levels._scrollHandler);
+  }
+
+  // Reset state
+  levels.classList.remove("has-overflow", "user-scrolled", "scrolled-to-bottom");
+  levels.scrollTop = 0;
+
+  // Wait one frame for grid layout to settle
+  requestAnimationFrame(() => {
+    const hasOverflow = levels.scrollHeight > levels.clientHeight + 2;
+    levels.classList.toggle("has-overflow", hasOverflow);
+    if (!hasOverflow) return;
+
+    const BOTTOM_THRESHOLD = 8;
+
+    function onScroll() {
+      if (!levels.classList.contains("user-scrolled") && levels.scrollTop > 0) {
+        levels.classList.add("user-scrolled");
+      }
+      const atBottom = levels.scrollTop + levels.clientHeight
+                       >= levels.scrollHeight - BOTTOM_THRESHOLD;
+      levels.classList.toggle("scrolled-to-bottom", atBottom);
+    }
+
+    levels._scrollHandler = onScroll;
+    levels.addEventListener("scroll", onScroll, { passive: true });
+  });
+}
+
+function showHomeScreen() {
+  const overlay     = document.getElementById("skin-overlay");
+  const swatches    = overlay.querySelectorAll(".skin-swatch");
+  const continueBtn = document.getElementById("btn-continue");
+  buildLevelGrid();
+  setupLevelScrollState();
+  const levelCells  = document.querySelectorAll(".level-cell");
 
   // Pre-select the stored color (default red)
-  let selected = localStorage.getItem(SKIN_KEY) || "0xEE2222";
-  swatches.forEach(s => s.classList.toggle("selected", s.dataset.color === selected));
+  let selectedColor = progress.selectedVehicleColor || "0xEE2222";
+  swatches.forEach(s => s.classList.toggle("selected", s.dataset.color === selectedColor));
 
   swatches.forEach(s => {
     s.onclick = () => {
-      selected = s.dataset.color;
+      selectedColor = s.dataset.color;
       swatches.forEach(x => x.classList.remove("selected"));
       s.classList.add("selected");
     };
   });
 
+  // Continue button — starts at highest unlocked level
+  continueBtn.textContent = `CONTINUE \u2014 LEVEL ${highestUnlockedLevel}`;
+  continueBtn.onclick = () => launchLevel(highestUnlockedLevel, selectedColor);
+
+  // Level grid — mark unlocked / locked / current-highest
+  levelCells.forEach(cell => {
+    const lvl = parseInt(cell.dataset.level);
+    cell.classList.remove("locked", "unlocked", "current-highest");
+    cell.onclick = null;
+
+    if (lvl > highestUnlockedLevel) {
+      cell.classList.add("locked");
+    } else if (lvl === highestUnlockedLevel) {
+      cell.classList.add("current-highest");
+      cell.onclick = () => launchLevel(lvl, selectedColor);
+    } else {
+      cell.classList.add("unlocked");
+      cell.onclick = () => launchLevel(lvl, selectedColor);
+    }
+  });
+
+  // ── Reset Progress button ──
+  const resetBtn = document.getElementById("btn-reset-progress");
+  resetBtn.onclick = () => {
+    if (confirm("Reset all progress? This will lock all levels and start you at Level 1. Leaderboard times are kept.")) {
+      resetProgress();
+      applyVehicleColor("0xEE2222");
+      loadLevel(1, true);
+      showHomeScreen();  // re-render with reset state
+    }
+  };
+
+  // ── Player ID display ──
+  document.getElementById("player-id-display").textContent = progress.playerId;
+
+  // Copy to clipboard (with fallback)
+  document.getElementById("btn-copy-id").onclick = () => {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(progress.playerId).then(() => {
+        document.getElementById("btn-copy-id").textContent = "✅";
+        setTimeout(() => document.getElementById("btn-copy-id").textContent = "📋", 1500);
+      }).catch(() => {
+        prompt("Copy your Player ID:", progress.playerId);
+      });
+    } else {
+      prompt("Copy your Player ID:", progress.playerId);
+    }
+  };
+
+  // Restore from another player ID
+  document.getElementById("btn-restore-id").onclick = async () => {
+    const inputId = prompt("Enter a Player ID to restore progress from another device:");
+    if (!inputId || !inputId.trim()) return;
+    const trimmed = inputId.trim();
+    if (trimmed === progress.playerId) { alert("That's your current Player ID."); return; }
+    const remote = await loadProgressFromFirebase(trimmed);
+    if (!remote) { alert("No progress found for that Player ID."); return; }
+    if (!confirm(`Found progress: Level ${remote.highestUnlockedLevel} unlocked.\n\nThis will replace your current progress and link this device to the imported Player ID. Continue?`)) return;
+    // Adopt the remote progress
+    progress.playerId = trimmed;
+    progress.playerName = remote.playerName || progress.playerName || "";
+    progress.highestUnlockedLevel = remote.highestUnlockedLevel ?? 1;
+    progress.currentLevel = remote.currentLevel ?? 1;
+    progress.selectedVehicleColor = remote.selectedVehicleColor || progress.selectedVehicleColor;
+    progress.version = remote.version ?? 1;
+    progress.updatedAt = new Date().toISOString();
+    highestUnlockedLevel = progress.highestUnlockedLevel;
+    saveProgress(progress);
+    applyVehicleColor(progress.selectedVehicleColor);
+    loadLevel(progress.currentLevel, true);
+    showHomeScreen();
+  };
+
   skinSelectActive = true;
   overlay.classList.add("active");
+}
 
-  playBtn.onclick = () => {
-    applyVehicleColor(selected);
-    overlay.classList.remove("active");
-    skinSelectActive = false;
-    startCountdown(level);
-  };
+function launchLevel(level, colorStr) {
+  applyVehicleColor(colorStr);
+  // Persist color choice to progress
+  progress.selectedVehicleColor = colorStr;
+  saveProgress(progress);
+
+  const overlay = document.getElementById("skin-overlay");
+  overlay.classList.remove("active");
+  skinSelectActive = false;
+  loadLevel(level);
+  reset();
 }
 
 // ===== Screen shake =====
@@ -5131,7 +5430,7 @@ function showLeaderboard(level, top5, myTime, myIdx) {
   lbNotTop.textContent = myIdx === -1 ? `Your time: ${formatTime(myTime)} — not in top 5` : "";
   const isMobile = "ontouchstart" in window || navigator.maxTouchPoints > 0;
   const action = isMobile ? "Tap to continue" : "Press R";
-  lbHint.textContent   = level < 9 ? `${action} for Level ${level + 1}` : `${action} to play again`;
+  lbHint.textContent   = level < MAX_LEVEL ? `${action} for Level ${level + 1}` : `${action} to play again`;
   lbOverlay.classList.add("active");
 
   // Allow tap/click on the overlay to advance (essential for mobile)
@@ -5139,7 +5438,8 @@ function showLeaderboard(level, top5, myTime, myIdx) {
     lbOverlay.classList.remove("active");
     lbOverlay.onclick = null;
     won = false;
-    const next = level < 9 ? level + 1 : 1;
+    unlockNextLevel(level);
+    const next = level < MAX_LEVEL ? level + 1 : 1;
     loadLevel(next);
     reset();
   };
@@ -5147,7 +5447,8 @@ function showLeaderboard(level, top5, myTime, myIdx) {
 function showNameEntry(finalTime) {
   levelCompleteMsg.textContent  = `Level ${currentLevel} complete!`;
   finalTimeDisplay.textContent  = formatTime(finalTime);
-  nameInput.value = "";
+  nameInput.value = progress.playerName && progress.playerName !== "Anonymous"
+    ? progress.playerName : "";
   nameOverlay.classList.add("active");
   setTimeout(() => nameInput.focus(), 60);
   nameSubmit.onclick  = doSubmit;
@@ -5155,6 +5456,9 @@ function showNameEntry(finalTime) {
   async function doSubmit() {
     const name = nameInput.value.trim() || "Anonymous";
     nameOverlay.classList.remove("active");
+    // Save player name to progress
+    progress.playerName = name;
+    saveProgress(progress);
     // Write score to Firestore, then fetch shared top 5
     await saveScore(currentLevel, name, finalTime);
     const top5 = await getTopScores(currentLevel);
@@ -5183,16 +5487,6 @@ addEventListener("keyup", (e) => {
     btnJ.addEventListener("touchstart",  e => { e.preventDefault(); keys.add("Space"); },    { passive: false });
     btnJ.addEventListener("touchend",    e => { e.preventDefault(); keys.delete("Space"); }, { passive: false });
     btnJ.addEventListener("touchcancel", ()  => { keys.delete("Space"); });
-  }
-
-  // ── Reset button (unchanged) ──
-  const btnR = document.getElementById("btn-reset-mobile");
-  if (btnR) {
-    btnR.addEventListener("touchend", e => {
-      e.preventDefault();
-      keys.add("KeyR");
-      setTimeout(() => keys.delete("KeyR"), 100);
-    }, { passive: false });
   }
 
   // ── Dynamic virtual thumbstick ──
@@ -5561,7 +5855,8 @@ function update(dt) {
     if (lbOverlay.classList.contains("active")) {
       lbOverlay.classList.remove("active");
       won = false;
-      const next = currentLevel < 9 ? currentLevel + 1 : 1;
+      unlockNextLevel(currentLevel);
+      const next = currentLevel < MAX_LEVEL ? currentLevel + 1 : 1;
       loadLevel(next);
       reset();
     } else if (!won && !countdownActive) {
@@ -6413,7 +6708,18 @@ function updateStorm(dt, countdown) {
   }
 }
 
-loadLevel(1);
+(async () => {
+  try {
+    await initProgressFromFirebase();
+    await flushPendingSync();
+  } catch (e) {
+    console.warn("Boot sync error:", e);
+  } finally {
+    document.getElementById("boot-loader").classList.remove("active");
+  }
+  loadLevel(progress.currentLevel, true);
+  showHomeScreen();
+})();
 
 // ===== Loop =====
 let last = performance.now();

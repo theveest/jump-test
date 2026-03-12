@@ -223,9 +223,9 @@
 
       #right-controls {
         position: absolute;
-        bottom: 28px; right: 28px;
+        bottom: 32px; right: 28px;
         display: flex; flex-direction: column;
-        align-items: center; gap: 14px;
+        align-items: center;
         pointer-events: none;
       }
       #btn-jump {
@@ -240,25 +240,14 @@
         cursor: pointer; transition: background .08s;
       }
       #btn-jump:active { background: rgba(255,215,0,.42); }
-      #btn-reset-mobile {
-        width: 50px; height: 50px; border-radius: 50%;
-        background: rgba(255,255,255,.12);
-        border: 1px solid rgba(255,255,255,.22);
-        color: rgba(255,255,255,.70); font: 600 15px/1 system-ui;
-        pointer-events: all;
-        -webkit-tap-highlight-color: transparent;
-        user-select: none; touch-action: none;
-        cursor: pointer; transition: background .08s;
-      }
-      #btn-reset-mobile:active { background: rgba(255,255,255,.28); }
 
       /* ── Skin selector ── */
       #skin-overlay { flex-direction: column; }
       #skin-overlay .modal-card { max-width: 500px; }
-      #skin-overlay h2 { margin: 0 0 24px; font-size: 21px; font-weight: 700; letter-spacing: .04em; }
-      #skin-logo { display: block; width: 100%; max-width: 420px; margin: 0 auto 20px; }
+      #skin-overlay h2 { margin: 0 0 16px; font-size: 21px; font-weight: 700; letter-spacing: .04em; }
+      #skin-logo { display: block; width: 100%; max-width: 420px; margin: 0 auto 14px; }
       .skin-swatches {
-        display: flex; gap: 12px; justify-content: center; margin-bottom: 26px;
+        display: flex; gap: 12px; justify-content: center; margin-bottom: 18px;
       }
       .skin-swatch {
         display: flex; flex-direction: column; align-items: center; gap: 8px;
@@ -280,28 +269,260 @@
         font-size: 11px; font-weight: 600; letter-spacing: .08em;
         color: rgba(255,255,255,.65); text-transform: uppercase;
       }
-      #skin-play {
-        padding: 11px 44px;
-        background: #FFD700; border: none; border-radius: 9px;
-        color: #111; font: 600 15px system-ui; cursor: pointer;
-        transition: background .12s;
+      /* ── Home card — flex column layout ── */
+      #home-card {
+        max-height: calc(100vh - 40px);
+        max-height: calc(100dvh - 40px);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
       }
-      #skin-play:hover { background: #ffe84d; }
+
+      /* ── Home card sections ── */
+      .home-header { flex-shrink: 0; }
+
+      .home-levels {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: 300px;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        position: relative;
+        padding-bottom: 8px;
+      }
+      /* Conditional fade — only when JS detects overflow */
+      .home-levels.has-overflow {
+        mask-image: linear-gradient(to bottom, black calc(100% - 48px), transparent 100%);
+        -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 48px), transparent 100%);
+      }
+      .home-levels.has-overflow.scrolled-to-bottom {
+        mask-image: none;
+        -webkit-mask-image: none;
+      }
+      /* Sticky gradient overlay — conditional on overflow */
+      .home-levels::after {
+        content: "";
+        position: sticky;
+        bottom: 0; left: 0; right: 0;
+        display: block;
+        height: 40px;
+        margin-top: -40px;
+        background: linear-gradient(to bottom, transparent, rgba(8, 12, 26, 0.98));
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.25s ease;
+      }
+      .home-levels.has-overflow::after {
+        opacity: 1;
+      }
+      .home-levels.has-overflow.scrolled-to-bottom::after {
+        opacity: 0;
+      }
+
+      /* ── Scroll hint — "More levels ↓" ── */
+      #scroll-hint {
+        position: sticky;
+        bottom: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        padding: 6px 0 2px;
+        font: 600 11px/1 system-ui;
+        color: rgba(255, 215, 0, 0.7);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        pointer-events: none;
+        z-index: 1;
+        opacity: 1;
+        transition: opacity 0.4s ease;
+      }
+      .home-levels:not(.has-overflow) #scroll-hint {
+        display: none;
+      }
+      .home-levels.user-scrolled #scroll-hint {
+        opacity: 0;
+      }
+      #scroll-hint-arrow {
+        display: inline-block;
+        animation: scroll-hint-bounce 1.5s ease-in-out infinite;
+      }
+      @keyframes scroll-hint-bounce {
+        0%, 100% { transform: translateY(0); }
+        50%      { transform: translateY(3px); }
+      }
+
+      /* ── Desktop scrollbar — visible on non-touch devices ── */
+      @media (pointer: fine) {
+        .home-levels::-webkit-scrollbar { width: 6px; }
+        .home-levels::-webkit-scrollbar-track {
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 3px;
+        }
+        .home-levels::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.18);
+          border-radius: 3px;
+        }
+        .home-levels::-webkit-scrollbar-thumb:hover {
+          background: rgba(255, 255, 255, 0.30);
+        }
+        .home-levels {
+          scrollbar-width: thin;
+          scrollbar-color: rgba(255, 255, 255, 0.18) rgba(255, 255, 255, 0.05);
+        }
+      }
+
+      .home-footer {
+        flex-shrink: 0;
+        border-top: 1px solid rgba(255,255,255,.14);
+        padding-top: 14px;
+        margin-top: 8px;
+      }
+
+      /* ── Continue button ── */
+      #btn-continue {
+        display: block; width: 100%;
+        padding: 14px 20px; margin-bottom: 22px;
+        background: linear-gradient(135deg, #FFD700, #FFA500);
+        border: none; border-radius: 11px;
+        color: #111; font: 700 17px/1 system-ui;
+        letter-spacing: .06em;
+        cursor: pointer;
+        transition: background .12s, transform .1s;
+        box-shadow: 0 3px 14px rgba(255,165,0,.35);
+      }
+      #btn-continue:hover { background: linear-gradient(135deg, #ffe84d, #FFB833); transform: scale(1.02); }
+      #btn-continue:active { transform: scale(0.98); }
+
+      /* ── Level Select heading ── */
+      #level-select-heading {
+        font: 600 13px/1 system-ui;
+        color: rgba(255,255,255,.45);
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        margin-bottom: 12px;
+      }
+
+      /* ── Level grid — responsive ── */
+      #level-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 8px;
+        margin-bottom: 6px;
+      }
+      .level-cell {
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        padding: 8px 4px 6px;
+        border-radius: 10px;
+        border: 2px solid rgba(255,255,255,.12);
+        background: rgba(255,255,255,.05);
+        cursor: pointer;
+        transition: border-color .15s, background .15s, opacity .15s;
+      }
+      .level-cell:hover { background: rgba(255,255,255,.10); }
+      .level-num {
+        font: 800 20px/1 system-ui; color: #fff; margin-bottom: 2px;
+      }
+      .level-label {
+        font: 500 10px/1 system-ui;
+        color: rgba(255,255,255,.55);
+        letter-spacing: .06em; text-transform: uppercase;
+        white-space: nowrap; overflow: hidden;
+        text-overflow: ellipsis; max-width: 100%;
+      }
+      /* Unlocked — completed levels get a checkmark */
+      .level-cell.unlocked { border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.07); }
+      .level-cell.unlocked:not(.current-highest) .level-num::after {
+        content: " \2713";
+        font-size: 12px;
+        color: rgba(255,215,0,.55);
+        margin-left: 2px;
+      }
+      /* Current highest — stronger gold highlight */
+      .level-cell.current-highest {
+        border-color: #FFD700;
+        border-width: 2.5px;
+        box-shadow: 0 0 12px rgba(255,215,0,.35), inset 0 0 8px rgba(255,215,0,.08);
+        background: rgba(255,215,0,.08);
+        animation: current-level-pulse 3s ease-in-out infinite;
+      }
+      @keyframes current-level-pulse {
+        0%, 100% { box-shadow: 0 0 12px rgba(255,215,0,.35), inset 0 0 8px rgba(255,215,0,.08); }
+        50%      { box-shadow: 0 0 16px rgba(255,215,0,.45), inset 0 0 10px rgba(255,215,0,.10); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .level-cell.current-highest { animation: none; }
+        #scroll-hint-arrow { animation: none; }
+      }
+      /* Locked */
+      .level-cell.locked {
+        opacity: 0.35; cursor: not-allowed; pointer-events: none;
+      }
+      .level-cell.locked .level-num::after {
+        content: " \1F512"; font-size: 14px;
+      }
 
       /* ── Leaderboard tap-to-continue (cursor hint) ── */
       #lb-overlay .modal-card { cursor: pointer; }
 
-      /* ── Mobile: skin selector responsive fix ── */
+      /* ── Reset progress button ── */
+      #btn-reset-progress {
+        display: block; width: 100%; margin-top: 0; padding: 10px;
+        background: transparent; border: 1px solid rgba(255,255,255,.18);
+        border-radius: 8px; color: rgba(255,255,255,.45);
+        font: 600 12px/1 system-ui; letter-spacing: .08em;
+        text-transform: uppercase; cursor: pointer;
+      }
+      #btn-reset-progress:hover { border-color: rgba(255,80,80,.5); color: rgba(255,80,80,.7); }
+
+      /* ── Player ID area ── */
+      #player-id-area {
+        display: flex; align-items: center; gap: 6px;
+        margin-top: 10px;
+        font: 400 11px/1 system-ui; color: rgba(255,255,255,.3);
+      }
+      #player-id-display {
+        font-family: monospace; font-size: 10px;
+        color: rgba(255,255,255,.4);
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        max-width: 180px;
+      }
+      #btn-copy-id, #btn-restore-id {
+        background: none; border: none; cursor: pointer;
+        font-size: 14px; padding: 2px 4px; opacity: 0.5;
+      }
+      #btn-copy-id:hover, #btn-restore-id:hover { opacity: 0.9; }
+
+      /* ── Touch scroll polish ── */
+      @media (pointer: coarse) {
+        .home-levels {
+          scroll-behavior: smooth;
+          overscroll-behavior-y: contain;
+        }
+      }
+
+      /* ── Mobile: home screen responsive ── */
       @media (max-width: 480px) {
         .modal-card { min-width: unset; max-width: calc(100vw - 32px); padding: 24px 16px; }
         #skin-overlay .modal-card { max-width: calc(100vw - 32px); }
-        #skin-overlay h2 { font-size: 17px; margin-bottom: 18px; }
-        #skin-logo { max-width: 280px; }
+        #skin-overlay h2 { font-size: 17px; margin-bottom: 12px; }
+        #skin-logo { max-width: 240px; margin-bottom: 10px; }
         .skin-swatches { gap: 6px; }
         .skin-swatch { padding: 6px 6px; }
         .swatch-circle { width: 36px; height: 36px; }
         .swatch-label { font-size: 10px; }
-        #skin-play { padding: 10px 36px; }
+        #btn-continue { padding: 12px 16px; font-size: 15px; margin-bottom: 16px; }
+        .home-levels { max-height: 200px; }
+        #level-select-heading { font-size: 11px; margin-bottom: 10px; }
+        #level-grid { gap: 6px; }
+        .level-cell { padding: 7px 3px 6px; }
+        .level-num { font-size: 17px; margin-bottom: 2px; }
+        .level-label { font-size: 9px; }
+        #btn-reset-progress { font-size: 11px; padding: 8px; }
+        .home-footer { padding-top: 10px; margin-top: 6px; }
+        #player-id-area { flex-wrap: wrap; }
+        #player-id-display { max-width: 140px; font-size: 9px; }
       }
     </style>
   </head>
@@ -342,34 +563,61 @@
       </div>
     </div>
 
-    <!-- Skin selector overlay -->
+    <!-- Boot loading overlay -->
+    <div class="overlay active" id="boot-loader">
+      <div style="color:#fff; font:600 18px/1 system-ui; letter-spacing:.08em; text-transform:uppercase; opacity:.7;">
+        LOADING...
+      </div>
+    </div>
+
+    <!-- Home screen overlay (vehicle color + continue + level select) -->
     <div class="overlay" id="skin-overlay">
-      <div class="modal-card">
-        <img id="skin-logo" src="jump_logo2.png" alt="JUMP!" />
-        <h2>CHOOSE YOUR VEHICLE COLOR</h2>
-        <div class="skin-swatches" id="skin-swatches">
-          <div class="skin-swatch" data-color="0xEE2222">
-            <div class="swatch-circle" style="background:#EE2222"></div>
-            <span class="swatch-label">Red</span>
+      <div class="modal-card" id="home-card">
+        <!-- HEADER — stays fixed at top -->
+        <div class="home-header">
+          <img id="skin-logo" src="jump_logo2.png" alt="JUMP!" />
+          <h2>CHOOSE YOUR VEHICLE COLOR</h2>
+          <div class="skin-swatches" id="skin-swatches">
+            <div class="skin-swatch" data-color="0xEE2222">
+              <div class="swatch-circle" style="background:#EE2222"></div>
+              <span class="swatch-label">Red</span>
+            </div>
+            <div class="skin-swatch" data-color="0x2255EE">
+              <div class="swatch-circle" style="background:#2255EE"></div>
+              <span class="swatch-label">Blue</span>
+            </div>
+            <div class="skin-swatch" data-color="0x22BB44">
+              <div class="swatch-circle" style="background:#22BB44"></div>
+              <span class="swatch-label">Green</span>
+            </div>
+            <div class="skin-swatch" data-color="0xEECC00">
+              <div class="swatch-circle" style="background:#EECC00"></div>
+              <span class="swatch-label">Yellow</span>
+            </div>
+            <div class="skin-swatch" data-color="0xFF44BB">
+              <div class="swatch-circle" style="background:#FF44BB"></div>
+              <span class="swatch-label">Pink</span>
+            </div>
           </div>
-          <div class="skin-swatch" data-color="0x2255EE">
-            <div class="swatch-circle" style="background:#2255EE"></div>
-            <span class="swatch-label">Blue</span>
-          </div>
-          <div class="skin-swatch" data-color="0x22BB44">
-            <div class="swatch-circle" style="background:#22BB44"></div>
-            <span class="swatch-label">Green</span>
-          </div>
-          <div class="skin-swatch" data-color="0xEECC00">
-            <div class="swatch-circle" style="background:#EECC00"></div>
-            <span class="swatch-label">Yellow</span>
-          </div>
-          <div class="skin-swatch" data-color="0xFF44BB">
-            <div class="swatch-circle" style="background:#FF44BB"></div>
-            <span class="swatch-label">Pink</span>
+          <button id="btn-continue">CONTINUE &mdash; LEVEL 4</button>
+        </div>
+
+        <!-- SCROLLABLE MIDDLE — only this section scrolls -->
+        <div class="home-levels">
+          <div id="level-select-heading">LEVEL SELECT</div>
+          <div id="level-grid"><!-- JS generates cells --></div>
+        </div>
+
+        <!-- FOOTER — stays fixed at bottom -->
+        <div class="home-footer">
+          <button id="btn-reset-progress">RESET PROGRESS</button>
+          <div id="player-id-area">
+            <span id="player-id-label">Player ID:</span>
+            <span id="player-id-display"></span>
+            <button id="btn-copy-id" title="Copy Player ID">📋</button>
+            <button id="btn-restore-id" title="Restore from another device">🔄</button>
           </div>
         </div>
-        <button id="skin-play">PLAY</button>
       </div>
     </div>
 
@@ -403,10 +651,9 @@
       <!-- Right-side buttons (unchanged) -->
       <div id="right-controls">
         <button id="btn-jump">JUMP</button>
-        <button id="btn-reset-mobile">R</button>
       </div>
     </div>
 
-    <script type="module" src="./main.js"></script>
+    <script type="module" src="./main.js?v=11"></script>
   </body>
 </html>
