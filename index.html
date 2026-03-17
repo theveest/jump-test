@@ -431,14 +431,15 @@
         white-space: nowrap; overflow: hidden;
         text-overflow: ellipsis; max-width: 100%;
       }
-      /* Unlocked — completed levels get a checkmark */
+      /* Unlocked — completed levels */
       .level-cell.unlocked { border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.07); }
-      .level-cell.unlocked:not(.current-highest) .level-num::after {
-        content: " \2713";
-        font-size: 12px;
-        color: rgba(255,215,0,.55);
-        margin-left: 2px;
-      }
+      /* Level progress badges */
+      .level-progress { display: flex; gap: 6px; margin-top: 4px; font-size: 10px; line-height: 1; }
+      .level-stars, .level-coins { display: flex; gap: 1px; letter-spacing: 1px; }
+      .lp-filled { color: #FFD84D; }
+      .lp-empty  { color: rgba(255,255,255,.2); }
+      .level-coins .lp-filled { color: #FFE066; }
+      .level-cell.locked .level-progress { display: none; }
       /* Current highest — stronger gold highlight */
       .level-cell.current-highest {
         border-color: #FFD700;
@@ -462,6 +463,34 @@
       .level-cell.locked .level-num::after {
         content: " \1F512"; font-size: 14px;
       }
+
+      /* ── Reward screen ── */
+      #reward-level-name { font: 500 14px system-ui; color: rgba(255,255,255,.55); text-transform: uppercase; letter-spacing: .06em; margin: -4px 0 8px; }
+      #reward-best-time { font: 600 14px system-ui; margin: -8px 0 16px; }
+      .reward-new-best { color: #4ade80; }
+      .reward-no-best { color: rgba(255,255,255,.45); }
+      #reward-stars { margin: 8px 0 4px; }
+      .reward-stars-main { font-size: 36px; letter-spacing: 8px; }
+      .reward-stars-main span { display: inline-block; animation: star-pop .35s ease forwards; }
+      .reward-stars-label { font-size: 11px; color: rgba(255,255,255,.35); letter-spacing: .06em; text-transform: uppercase; margin-top: 0px; }
+      .reward-stars-run { font-size: 13px; color: rgba(255,255,255,.35); margin-top: 2px; }
+      .reward-prev-time { font-size: 13px; color: rgba(255,255,255,.45); margin-top: 2px; }
+      #reward-coins { font-size: 14px; color: rgba(255,255,255,.65); margin: 4px 0 20px; }
+      .reward-coins-best { font-size: 13px; color: rgba(255,255,255,.45); margin-top: 2px; }
+      @keyframes star-pop {
+        0%   { transform: scale(0.6); opacity: 0; }
+        60%  { transform: scale(1.15); opacity: 1; }
+        100% { transform: scale(1); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .reward-stars-main span { animation: none; }
+      }
+      #reward-buttons { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+      .reward-btn { padding: 12px 24px; border: none; border-radius: 10px; font: 700 15px system-ui; cursor: pointer; transition: .12s; }
+      .reward-btn-primary { background: linear-gradient(135deg, #FFD700, #FFA500); color: #1a1a2e; }
+      .reward-btn-primary:hover { filter: brightness(1.1); transform: scale(1.02); }
+      .reward-btn-secondary { background: rgba(255,255,255,.08); color: #e6edf3; border: 1px solid rgba(255,255,255,.18); }
+      .reward-btn-secondary:hover { background: rgba(255,255,255,.14); }
 
       /* ── Leaderboard tap-to-continue (cursor hint) ── */
       #lb-overlay .modal-card { cursor: pointer; }
@@ -502,6 +531,11 @@
         }
       }
 
+      @media (max-width: 480px) {
+        #reward-buttons { flex-direction: column; }
+        .reward-btn { width: 100%; }
+      }
+
       /* ── Mobile: home screen responsive ── */
       @media (max-width: 480px) {
         .modal-card { min-width: unset; max-width: calc(100vw - 32px); padding: 24px 16px; }
@@ -540,6 +574,23 @@
 
     <!-- Timer -->
     <div id="timer">0:00.0</div>
+
+    <!-- Reward screen overlay -->
+    <div class="overlay" id="reward-overlay">
+      <div class="modal-card">
+        <h2 id="reward-title">LEVEL COMPLETE!</h2>
+        <div id="reward-level-name"></div>
+        <div class="time-display" id="reward-time">0:00.0</div>
+        <div id="reward-best-time"></div>
+        <div id="reward-stars"></div>
+        <div id="reward-coins"></div>
+        <div id="reward-buttons">
+          <button id="reward-next" class="reward-btn reward-btn-primary">NEXT LEVEL</button>
+          <button id="reward-retry" class="reward-btn reward-btn-secondary">RETRY</button>
+          <button id="reward-home" class="reward-btn reward-btn-secondary">HOME</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Name-entry overlay -->
     <div class="overlay" id="name-overlay">

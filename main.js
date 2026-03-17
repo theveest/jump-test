@@ -112,6 +112,8 @@ let coinGlowGeo = null;  // shared glow halo geometry
 let coinGlowMat = null;  // shared glow halo material
 let blobShadowTexture = null; // shared soft shadow texture
 let blobShadowMat     = null; // shared soft shadow material
+let coinBursts = [];           // active coin burst effects
+let coinBurstMat = null;       // shared base material (cloned per burst)
 let burst       = null;
 let starGroup   = null;
 let planetGroup = null;
@@ -994,13 +996,67 @@ function spawnCoin(x, y, z) {
   coinData.push({ mesh, shadow, baseY: y, bobOffset: Math.random() * Math.PI * 2, collected: false });
 }
 
+function spawnCoinBurst(x, y, z) {
+  const N = 5;
+  const pos3 = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    pos3[i * 3] = x; pos3[i * 3 + 1] = y; pos3[i * 3 + 2] = z;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pos3, 3));
+  if (!coinBurstMat) {
+    coinBurstMat = new THREE.PointsMaterial({
+      size: 0.38, color: 0xFFE066, transparent: true, opacity: 1.0,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+  }
+  const mat = coinBurstMat.clone();
+  const mesh = new THREE.Points(geo, mat);
+  scene.add(mesh);
+
+  const vels = Array.from({ length: N }, () => {
+    const theta = Math.random() * Math.PI * 2;
+    const speed = 2.5 + Math.random() * 2.5;
+    return new THREE.Vector3(
+      Math.cos(theta) * speed,
+      0.5 + Math.random() * 1.0,
+      Math.sin(theta) * speed
+    );
+  });
+  coinBursts.push({ mesh, geo, mat, vels, age: 0, life: 0.35, startSize: 0.38 });
+}
+
+function updateCoinBursts(dt) {
+  for (let i = coinBursts.length - 1; i >= 0; i--) {
+    const b = coinBursts[i];
+    b.age += dt;
+    if (b.age > b.life) {
+      scene.remove(b.mesh);
+      b.geo.dispose();
+      b.mat.dispose();
+      coinBursts.splice(i, 1);
+      continue;
+    }
+    const pos3 = b.geo.attributes.position.array;
+    for (let j = 0; j < b.vels.length; j++) {
+      pos3[j * 3]     += b.vels[j].x * dt;
+      pos3[j * 3 + 1] += b.vels[j].y * dt;
+      pos3[j * 3 + 2] += b.vels[j].z * dt;
+    }
+    b.geo.attributes.position.needsUpdate = true;
+    b.mat.opacity = Math.max(0, 1 - b.age / b.life);
+    const lifeRatio = Math.max(0, 1 - b.age / b.life);
+    b.mat.size = Math.max(0.04, b.startSize * lifeRatio);
+  }
+}
+
 function collectCoin(coin) {
   if (coin.collected) return;
+  spawnCoinBurst(coin.mesh.position.x, coin.mesh.position.y, coin.mesh.position.z);
   coin.collected = true;
   coin.mesh.visible = false;
   coin.shadow.visible = false;
   onCoinCollected();
-  console.log("Coin collected:", coinsCollectedThisRun); // TEMP DEBUG
 }
 
 function checkCoinCollisions() {
@@ -1057,6 +1113,8 @@ function clearCoins() {
     coinGroup = null;
   }
   coinData.length = 0;
+  for (const b of coinBursts) { scene.remove(b.mesh); b.geo.dispose(); b.mat.dispose(); }
+  coinBursts.length = 0;
 }
 
 // ===== Ring spawner =====
@@ -2801,6 +2859,12 @@ function buildLevel2() {
   boxPlatform({ x: -5,  y: 7.5, z: -136, w: 4,  h: 0.6, d: 4,  color: 0x9B6E42 }); // light wood
   movingPlatform({ x: -1, y: 8.0, z: -145, w: 4, h: 0.6, d: 4, axis: "x", amplitude: 3.5, speed: 1.65, phase: 0.8, color: 0x4E8F35 }); // bright green
   boxPlatform({ x: 0,   y: 8.5, z: -155, w: 8,  h: 0.6, d: 8,  color: 0x4A2E10 }); // rich dark bark
+
+  // Coins (early / mid / late progression markers)
+  spawnCoin(10,  2.0,  -32);   // Early 21%: above step platform (y=1.0, +1.0)
+  spawnCoin(6,   6.2,  -79);   // Mid 51%: above static platform near saw blade (y=5.2, +1.0)
+  spawnCoin(-5,  7.5, -118);   // Late 76%: above static platform (y=6.5, +1.0)
+
   levelEndZ = -155;
   spawnRing(0, 10.5, -155);
 }
@@ -2841,6 +2905,11 @@ function buildLevel3() {
   pendulumObstacle({ x:-3, y:21.0, z:-170, armLength:6.0, speed:2.2, amplitude:1.05, color:0xFF8800, neon:true, sphere:true, sphereRadius:1.9 });
   movingPlatform({ x:0,  y:14.1, z:-179, w:5,  h:0.6, d:5, axis:"x", amplitude:4.0, speed:2.0, phase:0.5, color:0xCC00FF, neon:true });
   boxPlatform({ x:0,   y:14.4, z:-188, w:8,  h:0.6, d:8,  color:0xFFEE00, neon:true });
+
+  // Coins (early / mid / late progression markers)
+  spawnCoin(6,   2.2,  -36);   // Early 19%: above flat approach to ramp (y=1.2, +1.0)
+  spawnCoin(-5,  8.6, -104);   // Mid 55%: above moving X-platform, midpoint X=-5 (y=7.6, +1.0)
+  spawnCoin(-6, 14.7, -161);   // Late 86%: above ramp 2 landing (y=13.7, +1.0)
 
   levelEndZ = -188;
   spawnRing(0, 16.4, -188);
@@ -2952,6 +3021,11 @@ function buildLevel4() {
   movingPlatform({ x:2,  y:10.5, z:-217, w:4,  h:0.7, d:4,  axis:"x", amplitude:3.5, speed:2.3,  color:0xAA00FF, neon:true });
   boxPlatform({ x:0,  y:11,   z:-228, w:8,  h:0.7, d:8,  color:0x00CCDD, neon:true });
 
+  // Coins (early / mid / late progression markers)
+  spawnCoin(6,   2.0,  -39);   // Early 17%: above cave entry platform (y=1.0, +1.0)
+  spawnCoin(-4,  4.0, -118);   // Mid 52%: above moving X-platform, midpoint X=-4 (y=3.0, +1.0)
+  spawnCoin(2,  10.8, -195);   // Late 86%: above moving X-platform, midpoint X=2 (y=9.8, +1.0)
+
   levelEndZ = -228;
   spawnRing(0, 13.5, -228);
 }
@@ -3005,6 +3079,11 @@ function buildLevel5() {
   spawnGeyser(  2, -144, 5.5, 1.0);  // between landing z=-128 and mover z=-139 ... mover to z=-150
   spawnGeyser( -6, -165, 4.8, 3.5);  // between platform z=-160 and mover z=-171
   spawnGeyser( -2, -198, 6.0, 1.8);  // between platform z=-193 and mover z=-204
+
+  // Coins (early / mid / late progression markers)
+  spawnCoin(12,  2.5,  -46);   // Early 18%: above static platform (y=1.5, +1.0)
+  spawnCoin(4,  11.5, -139);   // Mid 55%: above moving X-platform, midpoint X=4 (y=10.5, +1.0)
+  spawnCoin(4,  14.5, -204);   // Late 80%: above moving X-platform, midpoint X=4 (y=13.5, +1.0)
 
   levelEndZ = -255;
   spawnRing(0, 18.0, -255);
@@ -3325,6 +3404,11 @@ function buildLevel6() {
   lollipopPendulum({ x:0, y:20, z:-174, armLength:9.0, ballRadius:2.0, speed:2.6, amplitude:1.05, stickColor:0xFF2244, ballColor:0xCC88FF });
   gumDropPad({ x: 0,  y:9.2, z:-186,  w:3, d:3, bounceSpeed:20, color:0x33CC44 }); // GREEN — climax final bounce
   boxPlatform({ x: 0,  y:13.0, z:-200, w:8,  h:0.6, d:8,  color:CP.red    }); // raised finale
+
+  // Coins (early / mid / late progression markers)
+  spawnCoin(-2,  6.0,  -39);   // Early 20%: above platform after gumdrop bounce (y=5.0, +1.0)
+  spawnCoin(2,   8.0, -102);   // Mid 51%: above main path landing (y=7.0, +1.0)
+  spawnCoin(0,  10.0, -167);   // Late 84%: above moving X-platform, midpoint X=0 (y=9.0, +1.0)
 
   levelEndZ = -200;
   spawnRing(0, 15.0, -200);
@@ -3976,6 +4060,11 @@ function buildLevel7() {
   boxPlatform({ x: 0,  y: 5,   z:-162, w: 3, h:0.6, d: 3, color: NC.navy  }); // narrow
   boxPlatform({ x: 0,  y: 6,   z:-172, w: 8, h:0.6, d: 8, color: NC.slate }); // finale
 
+  // Coins (early / mid / late progression markers)
+  spawnCoin(0,   1.0,  -32);   // Early 19%: above Y-elevator, midpoint Y=0 (y=0.0, +1.0)
+  spawnCoin(0,   3.0, -101);   // Mid 59%: above X-mover in wind zone, midpoint X=0 (y=2.0, +1.0)
+  spawnCoin(0,   7.0, -143);   // Late 83%: above X-mover, midpoint X=0 (y=6.0, +1.0)
+
   levelEndZ = -172;
   spawnRing(0, 8.0, -172);
 }
@@ -4447,6 +4536,11 @@ function buildLevel8() {
   scene.add(envLight2);
   decorations.push(envLight2);
 
+  // Coins (early / mid / late progression markers)
+  spawnCoin(-7,  3.0,  -43);   // Early 26%: above left fork entry (y=2.0, +1.0)
+  spawnCoin(0,   4.0,  -96);   // Mid 57%: above merge platform (y=3.0, +1.0)
+  spawnCoin(0,   6.0, -138);   // Late 83%: above narrow ledge (y=5.0, +1.0)
+
   levelEndZ = -167;
   spawnRing(0, 9.0, -167);
 }
@@ -4567,6 +4661,11 @@ function buildLevel9() {
   const el6 = new THREE.PointLight(0x5599cc, 1.2, 100);
   el6.position.set(5, 16, -380);
   scene.add(el6); decorations.push(el6);
+
+  // Coins (early / mid / late progression markers)
+  spawnCoin(5,   4.6,  -76);   // Early 19%: above wind corridor zigzag (y=3.6, +1.0)
+  spawnCoin(0,   8.0, -198);   // Mid 51%: above phase grid center — timing required (y=7.0, +1.0)
+  spawnCoin(0,  11.5, -312);   // Late 80%: above moving bridge, midpoint X=0 (y=10.5, +1.0)
 
   levelEndZ = -392;
   spawnRing(0, 16.0, -392);
@@ -5042,6 +5141,23 @@ function updateLevelStats(level, time) {
   stats.completed = true;
 }
 
+function getRunRewardSummary(level, finalTime) {
+  const key = String(level);
+  const stats = progress.levelStats[key] || { bestTime: null, coins: 0, stars: 0 };
+  const starsThisRun = calculateStars(level, finalTime, coinsCollectedThisRun);
+  return {
+    level,
+    finalTime,
+    coinsThisRun: coinsCollectedThisRun,
+    starsThisRun,
+    bestTimeBefore: stats.bestTime,
+    isNewBest: stats.bestTime === null || finalTime < stats.bestTime,
+    savedCoins: stats.coins,
+    savedStars: stats.stars,
+    isLastLevel: level >= MAX_LEVEL,
+  };
+}
+
 function getTotalStars() {
   let total = 0;
   if (!progress.levelStats) return 0;
@@ -5204,6 +5320,24 @@ function applyVehicleColor(hexStr) {
   if (SKIN_VALS[savedColor]) applyVehicleColor(savedColor);
 })();
 
+function buildLevelProgressMarkup(level) {
+  const stats = progress.levelStats?.[String(level)] || { stars: 0, coins: 0 };
+  let html = '<span class="level-stars">';
+  for (let i = 0; i < 3; i++) {
+    html += i < stats.stars
+      ? '<span class="lp-filled">\u2605</span>'
+      : '<span class="lp-empty">\u2606</span>';
+  }
+  html += '</span><span class="level-coins">';
+  for (let i = 0; i < TOTAL_COINS_PER_LEVEL; i++) {
+    html += i < stats.coins
+      ? '<span class="lp-filled">\u25CF</span>'
+      : '<span class="lp-empty">\u25CB</span>';
+  }
+  html += '</span>';
+  return html;
+}
+
 function buildLevelGrid() {
   const grid = document.getElementById("level-grid");
   grid.innerHTML = "";
@@ -5220,8 +5354,12 @@ function buildLevelGrid() {
     label.className = "level-label";
     label.textContent = LEVEL_SHORT_NAMES[lvl] || LEVEL_NAMES[lvl] || `Level ${lvl}`;
 
+    const progDiv = document.createElement("div");
+    progDiv.className = "level-progress";
+
     cell.appendChild(num);
     cell.appendChild(label);
+    cell.appendChild(progDiv);
     grid.appendChild(cell);
   }
 
@@ -5308,6 +5446,21 @@ function showHomeScreen() {
     } else {
       cell.classList.add("unlocked");
       cell.onclick = () => launchLevel(lvl, selectedColor);
+    }
+  });
+
+  // Populate level progress badges
+  levelCells.forEach(cell => {
+    const lvl = parseInt(cell.dataset.level);
+    const progDiv = cell.querySelector(".level-progress");
+    if (progDiv) {
+      if (lvl <= highestUnlockedLevel) {
+        progDiv.innerHTML = buildLevelProgressMarkup(lvl);
+        progDiv.style.visibility = "visible";
+      } else {
+        progDiv.innerHTML = "";
+        progDiv.style.visibility = "hidden";
+      }
     }
   });
 
@@ -5684,7 +5837,7 @@ async function getTopScores(level, max = 5) {
     return [];
   }
 }
-function showLeaderboard(level, top5, myTime, myIdx) {
+function showLeaderboard(level, top5, myTime, myIdx, isLastLevel) {
   lbTitle.textContent = `Level ${level} — Top Times`;
   let rows = `<thead><tr><th>Rank</th><th>Name</th><th>Time</th></tr></thead><tbody>`;
   if (top5.length === 0) {
@@ -5697,9 +5850,10 @@ function showLeaderboard(level, top5, myTime, myIdx) {
   }
   lbTable.innerHTML = rows + "</tbody>";
   lbNotTop.textContent = myIdx === -1 ? `Your time: ${formatTime(myTime)} — not in top 5` : "";
-  const isMobile = "ontouchstart" in window || navigator.maxTouchPoints > 0;
-  const action = isMobile ? "Tap to continue" : "Press R";
-  lbHint.textContent   = level < MAX_LEVEL ? `${action} for Level ${level + 1}` : `${action} to play again`;
+  const action = ("ontouchstart" in window || navigator.maxTouchPoints > 0) ? "Tap" : "Click";
+  lbHint.textContent = isLastLevel
+    ? `${action} to return home`
+    : `${action} for Level ${level + 1}`;
   lbOverlay.classList.add("active");
 
   // Allow tap/click on the overlay to advance (essential for mobile)
@@ -5707,13 +5861,75 @@ function showLeaderboard(level, top5, myTime, myIdx) {
     lbOverlay.classList.remove("active");
     lbOverlay.onclick = null;
     won = false;
-    unlockNextLevel(level);
-    const next = level < MAX_LEVEL ? level + 1 : 1;
-    loadLevel(next);
-    reset();
+    unlockNextLevel(level); // idempotent, safe to keep
+    if (isLastLevel) {
+      showHomeScreen();
+    } else {
+      loadLevel(level + 1);
+      reset();
+    }
   };
 }
-function showNameEntry(finalTime) {
+function showRewardScreen(summary) {
+  const rewardOverlay = document.getElementById("reward-overlay");
+  document.getElementById("reward-title").textContent = "LEVEL COMPLETE!";
+  document.getElementById("reward-level-name").textContent = LEVEL_NAMES[summary.level] || `Level ${summary.level}`;
+  document.getElementById("reward-time").textContent = formatTime(summary.finalTime);
+
+  const bestEl = document.getElementById("reward-best-time");
+  if (summary.isNewBest) {
+    bestEl.innerHTML = summary.bestTimeBefore != null
+      ? `<div class="reward-new-best">\u2605 NEW BEST!</div>
+         <div class="reward-prev-time">Previous: ${formatTime(summary.bestTimeBefore)}</div>`
+      : `<span class="reward-new-best">\u2605 FIRST COMPLETION!</span>`;
+  } else {
+    bestEl.innerHTML = `<span class="reward-no-best">Best: ${formatTime(summary.bestTimeBefore)}</span>`;
+  }
+
+  function buildStarHTML(count) {
+    let html = "";
+    for (let i = 0; i < 3; i++) {
+      const filled = i < count;
+      html += filled
+        ? `<span style="animation-delay:${i * 0.08}s;color:#FFD84D">\u2605</span>`
+        : `<span style="animation-delay:${i * 0.08}s;color:rgba(255,255,255,.25)">\u2606</span>`;
+    }
+    return html;
+  }
+  const bestStars = Math.max(summary.savedStars, summary.starsThisRun);
+  document.getElementById("reward-stars").innerHTML =
+    `<div class="reward-stars-main">${buildStarHTML(bestStars)}</div>
+     <div class="reward-stars-label">BEST RATING</div>
+     <div class="reward-stars-run">This run: ${summary.starsThisRun}/3 stars</div>`;
+
+  const totalCoins = TOTAL_COINS_PER_LEVEL;
+  const bestCoins = Math.max(summary.savedCoins, summary.coinsThisRun);
+  document.getElementById("reward-coins").innerHTML =
+    `Coins: ${summary.coinsThisRun}/${totalCoins}
+     <div class="reward-coins-best">Best: ${bestCoins}/${totalCoins}</div>`;
+
+  const nextBtn = document.getElementById("reward-next");
+  nextBtn.textContent = summary.isLastLevel ? "FINISH" : "NEXT LEVEL";
+  nextBtn.onclick = () => {
+    rewardOverlay.classList.remove("active");
+    showNameEntry(summary.finalTime, summary.isLastLevel);
+  };
+  document.getElementById("reward-retry").onclick = () => {
+    rewardOverlay.classList.remove("active");
+    won = false;
+    loadLevel(currentLevel);
+    reset();
+  };
+  document.getElementById("reward-home").onclick = () => {
+    rewardOverlay.classList.remove("active");
+    won = false;
+    showHomeScreen();
+  };
+
+  rewardOverlay.classList.add("active");
+}
+
+function showNameEntry(finalTime, isLastLevel) {
   levelCompleteMsg.textContent  = `Level ${currentLevel} complete!`;
   finalTimeDisplay.textContent  = formatTime(finalTime);
   nameInput.value = progress.playerName && progress.playerName !== "Anonymous"
@@ -5725,15 +5941,13 @@ function showNameEntry(finalTime) {
   async function doSubmit() {
     const name = nameInput.value.trim() || "Anonymous";
     nameOverlay.classList.remove("active");
-    // Save player name + level stats to progress
     progress.playerName = name;
-    updateLevelStats(currentLevel, finalTime);
     saveProgress(progress);
     // Write score to Firestore, then fetch shared top 5
     await saveScore(currentLevel, name, finalTime);
     const top5 = await getTopScores(currentLevel);
     const myIdx = top5.findIndex(e => e.name === name && e.time === finalTime);
-    showLeaderboard(currentLevel, top5, finalTime, myIdx);
+    showLeaderboard(currentLevel, top5, finalTime, myIdx, isLastLevel);
   }
 }
 
@@ -6182,6 +6396,7 @@ function update(dt) {
     ring.position.y  = ringBaseY + Math.sin(time * 2.4) * 0.35;
   }
   updateCoinAnimation(dt);
+  updateCoinBursts(dt);
   updateShadow();
 
   // ── Skin selector blocks all game logic ──
@@ -6448,7 +6663,11 @@ function update(dt) {
       won = true;
       vel.set(0, 0, 0);
       spawnRingBurst(ring.position.clone());
-      showNameEntry(levelTime);
+      const summary = getRunRewardSummary(currentLevel, levelTime);
+      updateLevelStats(currentLevel, levelTime);
+      unlockNextLevel(currentLevel);
+      saveProgress(progress);
+      showRewardScreen(summary);
     }
   }
 
