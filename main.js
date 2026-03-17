@@ -101,6 +101,17 @@ const decorations  = [];
 let ring      = null;
 let ringBaseY = 0;
 let levelEndZ = -149;   // set per level, used for progress bar
+// ── Coins ──
+let coinGroup   = null;
+let coinData    = [];    // [{ mesh, baseY, bobOffset, collected }]
+let coinGeo     = null;  // shared CylinderGeometry
+let coinEdgeGeo = null;  // shared TorusGeometry
+let coinMat     = null;  // shared gold material
+let coinEdgeMat = null;  // shared edge material
+let coinGlowGeo = null;  // shared glow halo geometry
+let coinGlowMat = null;  // shared glow halo material
+let blobShadowTexture = null; // shared soft shadow texture
+let blobShadowMat     = null; // shared soft shadow material
 let burst       = null;
 let starGroup   = null;
 let planetGroup = null;
@@ -896,6 +907,156 @@ function iciclePendulum({ x, y, z, armLength = 9, speed = 2.0, amplitude = 0.85,
     boxW: 2.6, boxH: 2.6, boxD: 2.6,
     speed, amplitude, worldPos: new THREE.Vector3(),
   });
+}
+
+// ===== Coins =====
+function ensureCoinGeometry() {
+  if (coinGeo) return;
+  coinGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.15, 24);
+  coinEdgeGeo = new THREE.TorusGeometry(0.5, 0.06, 8, 24);
+  coinMat = new THREE.MeshStandardMaterial({
+    color: 0xFFD84D,
+    emissive: 0xFFB300,
+    emissiveIntensity: 0.7,
+    metalness: 0.9,
+    roughness: 0.15,
+  });
+  coinEdgeMat = new THREE.MeshStandardMaterial({
+    color: 0xFFE066,
+    emissive: 0xCC9900,
+    emissiveIntensity: 0.4,
+    metalness: 0.9,
+    roughness: 0.2,
+  });
+  coinGlowGeo = new THREE.CylinderGeometry(0.85, 0.85, 0.05, 24);
+  coinGlowMat = new THREE.MeshBasicMaterial({
+    color: 0xFFD84D, transparent: true, opacity: 0.25,
+    side: THREE.DoubleSide, depthWrite: false,
+  });
+}
+
+function ensureBlobShadowMaterial() {
+  if (blobShadowMat) return;
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const g = ctx.createRadialGradient(size / 2, size / 2, size * 0.1, size / 2, size / 2, size * 0.5);
+  g.addColorStop(0, "rgba(0,0,0,0.35)");
+  g.addColorStop(0.4, "rgba(0,0,0,0.18)");
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  blobShadowTexture = new THREE.CanvasTexture(canvas);
+  blobShadowMat = new THREE.MeshBasicMaterial({
+    map: blobShadowTexture, transparent: true, depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+}
+
+function spawnCoin(x, y, z) {
+  ensureCoinGeometry();
+  if (!coinGroup) {
+    coinGroup = new THREE.Group();
+    scene.add(coinGroup);
+  }
+  const mesh = new THREE.Group();
+
+  // Disc body — rotate so flat face is vertical (visible during Y-axis spin)
+  const disc = new THREE.Mesh(coinGeo, coinMat);
+  disc.rotation.x = Math.PI / 2;
+  disc.castShadow = false;
+  disc.receiveShadow = false;
+  mesh.add(disc);
+
+  // Edge ring for visibility
+  const edge = new THREE.Mesh(coinEdgeGeo, coinEdgeMat);
+  edge.castShadow = false;
+  edge.receiveShadow = false;
+  mesh.add(edge);
+
+  // Glow halo (child of mesh — pulses with coin, which is fine)
+  const glow = new THREE.Mesh(coinGlowGeo, coinGlowMat);
+  glow.rotation.x = Math.PI / 2;
+  mesh.add(glow);
+
+  mesh.position.set(x, y, z);
+  coinGroup.add(mesh);
+
+  // Fake ground shadow (sibling in coinGroup — NOT child of mesh, so pulse doesn't affect it)
+  ensureBlobShadowMaterial();
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.4), blobShadowMat);
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.set(x, y - 0.7, z);
+  shadow.renderOrder = 2;
+  coinGroup.add(shadow);
+
+  coinData.push({ mesh, shadow, baseY: y, bobOffset: Math.random() * Math.PI * 2, collected: false });
+}
+
+function collectCoin(coin) {
+  if (coin.collected) return;
+  coin.collected = true;
+  coin.mesh.visible = false;
+  coin.shadow.visible = false;
+  onCoinCollected();
+  console.log("Coin collected:", coinsCollectedThisRun); // TEMP DEBUG
+}
+
+function checkCoinCollisions() {
+  for (const coin of coinData) {
+    if (coin.collected) continue;
+    const dx = player.position.x - coin.mesh.position.x;
+    const dy = player.position.y - coin.mesh.position.y;
+    const dz = player.position.z - coin.mesh.position.z;
+    if (dx * dx + dy * dy + dz * dz < 2.25) {  // 1.5² radius
+      collectCoin(coin);
+    }
+  }
+}
+
+function updateCoinAnimation(dt) {
+  for (const coin of coinData) {
+    if (coin.collected) continue;
+    coin.mesh.rotation.y += dt * 3.0;
+    coin.mesh.position.y = coin.baseY + Math.sin(time * 2.0 + coin.bobOffset) * 0.3;
+    // Dynamic shadow: find surface below coin
+    const cx = coin.mesh.position.x, cz = coin.mesh.position.z;
+    const surfaceY = findSurfaceBelow(cx, cz, coin.mesh.position.y + 0.3);
+    if (surfaceY != null) {
+      const heightAbove = coin.mesh.position.y - surfaceY;
+      const shadowScale = Math.max(0, 1 - heightAbove * 0.10);
+      coin.shadow.position.set(cx, surfaceY + 0.03, cz);
+      coin.shadow.scale.set(shadowScale, shadowScale, shadowScale);
+      coin.shadow.visible = true;
+    } else {
+      coin.shadow.visible = false;
+    }
+    // Subtle scale pulse (on mesh only — shadow is a sibling, unaffected)
+    const pulse = 1 + Math.sin(time * 3 + coin.bobOffset) * 0.04;
+    coin.mesh.scale.set(pulse, pulse, pulse);
+  }
+}
+
+function resetCoins() {
+  for (const coin of coinData) {
+    coin.collected = false;
+    coin.mesh.visible = true;
+    coin.mesh.position.y = coin.baseY;
+    coin.mesh.scale.set(1, 1, 1);
+    coin.shadow.visible = true;
+    coin.shadow.scale.set(1, 1, 1);
+  }
+}
+
+function clearCoins() {
+  if (coinGroup) {
+    scene.remove(coinGroup);
+    // Remove children without disposing shared geometry/materials
+    while (coinGroup.children.length) coinGroup.remove(coinGroup.children[0]);
+    coinGroup = null;
+  }
+  coinData.length = 0;
 }
 
 // ===== Ring spawner =====
@@ -2185,6 +2346,7 @@ function disposeTree(obj) {
 }
 
 function clearLevel() {
+  clearCoins();
   clearGeysers();
   clearIceBackground();
   for (const p of solids)      { scene.remove(p.mesh);  disposeTree(p.mesh);  }
@@ -2613,6 +2775,10 @@ function buildLevel1() {
   boxPlatform({ x: 0,   y: 6.0, z: -149, w: 8,  h: 0.6, d: 8,  color: C.gold   });
   levelEndZ = -149;
   spawnRing(0, 8.0, -149);
+  // Coins
+  spawnCoin(0,   2.3,  -15);   // Easy: above 2nd platform
+  spawnCoin(-11, 4.0,  -57);   // Detour: left branch
+  spawnCoin(5,   7.0, -110);   // Late: above moving platform
 }
 
 function buildLevel2() {
@@ -4670,13 +4836,10 @@ const spawn = new THREE.Vector3(0, 2.0, 0);
 player.position.copy(spawn);
 
 // ===== Fake shadow =====
-const shadowGeo  = new THREE.CircleGeometry(0.70, 24);
-const shadowMat  = new THREE.MeshBasicMaterial({
-  color: 0x000000, transparent: true, opacity: 0.18,
-  depthWrite: false, side: THREE.DoubleSide,
-});
-const shadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
+ensureBlobShadowMaterial();
+const shadowMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 2.2), blobShadowMat);
 shadowMesh.rotation.x = -Math.PI / 2;
+shadowMesh.renderOrder = 2;
 scene.add(shadowMesh);
 
 // ===== Motion trail =====
@@ -4741,6 +4904,13 @@ const LEVEL_SHORT_NAMES = {
 
 const MAX_LEVEL = 9;
 
+// ── Star target times (seconds) — 2-star threshold per level ──
+const LEVEL_STAR_TIMES = {
+  1: 45, 2: 50, 3: 55, 4: 60, 5: 65,
+  6: 70, 7: 75, 8: 80, 9: 85,
+};
+const TOTAL_COINS_PER_LEVEL = 3;
+
 // ===== Local Progress =====
 const PROGRESS_KEY    = "jump_progress";
 const PENDING_SYNC_KEY = "jump_pending_sync";
@@ -4749,12 +4919,23 @@ function generatePlayerId() {
   return "player_" + crypto.randomUUID();
 }
 
+function ensureLevelStats(prog) {
+  if (!prog.levelStats) prog.levelStats = {};
+  for (let lvl = 1; lvl <= MAX_LEVEL; lvl++) {
+    const key = String(lvl);
+    if (!prog.levelStats[key]) {
+      prog.levelStats[key] = { bestTime: null, coins: 0, stars: 0, completed: false };
+    }
+  }
+}
+
 function loadProgress() {
+  let prog;
   try {
     const raw = localStorage.getItem(PROGRESS_KEY);
     if (raw) {
       const p = JSON.parse(raw);
-      return {
+      prog = {
         playerId:             p.playerId || generatePlayerId(),
         playerName:           p.playerName || "",
         version:              p.version ?? 1,
@@ -4762,18 +4943,24 @@ function loadProgress() {
         currentLevel:         p.currentLevel ?? p.highestUnlockedLevel ?? 1,
         selectedVehicleColor: p.selectedVehicleColor || "0xEE2222",
         updatedAt:            p.updatedAt || new Date().toISOString(),
+        levelStats:           p.levelStats || {},
       };
     }
   } catch (e) { console.warn("Progress load failed:", e); }
-  return {
-    playerId:             generatePlayerId(),
-    playerName:           "",
-    version:              1,
-    highestUnlockedLevel: 1,
-    currentLevel:         1,
-    selectedVehicleColor: "0xEE2222",
-    updatedAt:            new Date().toISOString(),
-  };
+  if (!prog) {
+    prog = {
+      playerId:             generatePlayerId(),
+      playerName:           "",
+      version:              1,
+      highestUnlockedLevel: 1,
+      currentLevel:         1,
+      selectedVehicleColor: "0xEE2222",
+      updatedAt:            new Date().toISOString(),
+      levelStats:           {},
+    };
+  }
+  ensureLevelStats(prog);
+  return prog;
 }
 
 function saveProgress(prog) {
@@ -4798,6 +4985,7 @@ async function initProgressFromFirebase() {
       localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
     } catch (e) { console.warn("Progress cache update failed:", e); }
   }
+  ensureLevelStats(progress);
 }
 
 function unlockNextLevel(completedLevel) {
@@ -4818,11 +5006,58 @@ function resetProgress() {
   progress.highestUnlockedLevel = 1;
   progress.currentLevel = 1;
   progress.selectedVehicleColor = "0xEE2222";
+  progress.levelStats = {};
+  ensureLevelStats(progress);
   progress.updatedAt = new Date().toISOString();
   // Keep playerId and playerName — only reset game progress
   highestUnlockedLevel = 1;
   localStorage.removeItem(PENDING_SYNC_KEY);
   saveProgress(progress);
+}
+
+// ── Star / level-stat helpers ──
+function calculateStars(level, time, coinsCollected) {
+  let stars = 1; // 1 star = completed
+  if (LEVEL_STAR_TIMES[level] && time <= LEVEL_STAR_TIMES[level]) {
+    stars = 2; // 2 stars = beat target time
+    if (coinsCollected >= TOTAL_COINS_PER_LEVEL) stars = 3; // 3 stars = fast + all coins
+  }
+  return stars;
+}
+
+function updateLevelStats(level, time) {
+  ensureLevelStats(progress);
+  const key = String(level);
+  const stats = progress.levelStats[key];
+  const newStars = calculateStars(level, time, coinsCollectedThisRun);
+  // bestTime: keep fastest
+  if (stats.bestTime === null || time < stats.bestTime) {
+    stats.bestTime = time;
+  }
+  // stars: never decrease
+  stats.stars = Math.max(stats.stars, newStars);
+  // coins: never decrease
+  stats.coins = Math.max(stats.coins, coinsCollectedThisRun);
+  // completed: once true, stays true
+  stats.completed = true;
+}
+
+function getTotalStars() {
+  let total = 0;
+  if (!progress.levelStats) return 0;
+  for (const key of Object.keys(progress.levelStats)) {
+    total += progress.levelStats[key].stars || 0;
+  }
+  return total;
+}
+
+function getTotalCoins() {
+  let total = 0;
+  if (!progress.levelStats) return 0;
+  for (const key of Object.keys(progress.levelStats)) {
+    total += progress.levelStats[key].coins || 0;
+  }
+  return total;
 }
 
 // ===== Firebase Progress Sync =====
@@ -4835,6 +5070,7 @@ async function saveProgressToFirebase(prog) {
       highestUnlockedLevel: prog.highestUnlockedLevel,
       currentLevel:         prog.currentLevel,
       selectedVehicleColor: prog.selectedVehicleColor,
+      levelStats:           prog.levelStats || {},
       updatedAt:            serverTimestamp(),
     }, { merge: true });
     // Success — clear any pending sync
@@ -4862,10 +5098,31 @@ async function loadProgressFromFirebase(playerId) {
   return null;
 }
 
+function mergeLevelStats(localStats, remoteStats) {
+  const merged = {};
+  const allKeys = new Set([
+    ...Object.keys(localStats || {}),
+    ...Object.keys(remoteStats || {}),
+  ]);
+  for (const key of allKeys) {
+    const l = (localStats || {})[key] || { bestTime: null, coins: 0, stars: 0, completed: false };
+    const r = (remoteStats || {})[key] || { bestTime: null, coins: 0, stars: 0, completed: false };
+    merged[key] = {
+      bestTime: l.bestTime == null ? r.bestTime
+              : r.bestTime == null ? l.bestTime
+              : Math.min(l.bestTime, r.bestTime),
+      coins:     Math.max(l.coins || 0, r.coins || 0),
+      stars:     Math.max(l.stars || 0, r.stars || 0),
+      completed: l.completed || r.completed,
+    };
+  }
+  return merged;
+}
+
 function mergeProgress(local, remote) {
   if (!remote) return local;
   const highest = Math.max(local.highestUnlockedLevel, remote.highestUnlockedLevel ?? 1);
-  return {
+  const merged = {
     playerId:             local.playerId,
     playerName:           remote.playerName || local.playerName || "",
     version:              Math.max(local.version ?? 1, remote.version ?? 1),
@@ -4873,7 +5130,10 @@ function mergeProgress(local, remote) {
     currentLevel:         Math.min(Math.max(local.currentLevel, remote.currentLevel ?? 1), highest),
     selectedVehicleColor: remote.selectedVehicleColor || local.selectedVehicleColor,
     updatedAt:            new Date().toISOString(),
+    levelStats:           mergeLevelStats(local.levelStats, remote.levelStats),
   };
+  ensureLevelStats(merged);
+  return merged;
 }
 
 // ===== Timer =====
@@ -4882,6 +5142,13 @@ let won              = false;
 let countdownActive  = false;
 let countdownTime    = 0;
 let skinSelectActive = false;
+
+// ── Coin tracking (per-run, resets on crash/restart) ──
+let coinsCollectedThisRun = 0;
+
+function onCoinCollected() {
+  coinsCollectedThisRun++;
+}
 
 function formatTime(t) {
   const m  = Math.floor(t / 60);
@@ -5088,6 +5355,8 @@ function showHomeScreen() {
     progress.currentLevel = remote.currentLevel ?? 1;
     progress.selectedVehicleColor = remote.selectedVehicleColor || progress.selectedVehicleColor;
     progress.version = remote.version ?? 1;
+    progress.levelStats = remote.levelStats || {};
+    ensureLevelStats(progress);
     progress.updatedAt = new Date().toISOString();
     highestUnlockedLevel = progress.highestUnlockedLevel;
     saveProgress(progress);
@@ -5456,8 +5725,9 @@ function showNameEntry(finalTime) {
   async function doSubmit() {
     const name = nameInput.value.trim() || "Anonymous";
     nameOverlay.classList.remove("active");
-    // Save player name to progress
+    // Save player name + level stats to progress
     progress.playerName = name;
+    updateLevelStats(currentLevel, finalTime);
     saveProgress(progress);
     // Write score to Firestore, then fetch shared top 5
     await saveScore(currentLevel, name, finalTime);
@@ -5682,6 +5952,8 @@ function reset() {
   spaceDying      = false;
   spaceDyingTimer = 0;
   levelTime = 0;
+  coinsCollectedThisRun = 0;
+  resetCoins();
   timerEl.textContent      = formatTime(0);
   progressFill.style.width = "0%";
   trailHistory.length = 0;
@@ -5765,41 +6037,44 @@ function updatePendulums(dt) {
   }
 }
 
-function updateShadow() {
-  const px = player.position.x, pz = player.position.z;
-  const feet = player.position.y - playerHalf.y;
+// Returns the visual surface Y below (x,z) that is lower than yMax, or null if none.
+function findSurfaceBelow(x, z, yMax) {
   let bestTop = -9999;
-  let bestVtop = 0;  // visual top offset of the best candidate
+  let bestVtop = 0;
   for (let i = 0; i < solids.length; i++) {
     const p = solids[i];
-    if (Math.abs(px - p.mesh.position.x) > p.w / 2 + 0.5) continue;
-    if (Math.abs(pz - p.mesh.position.z) > p.d / 2 + 0.5) continue;
+    if (Math.abs(x - p.mesh.position.x) > p.w / 2 + 0.5) continue;
+    if (Math.abs(z - p.mesh.position.z) > p.d / 2 + 0.5) continue;
     const top = p.mesh.position.y + p.h / 2;
-    if (top < feet + 0.3 && top > bestTop) { bestTop = top; bestVtop = p.vtop || 0; }
+    if (top < yMax && top > bestTop) { bestTop = top; bestVtop = p.vtop || 0; }
   }
   for (let i = 0; i < movers.length; i++) {
     const p = movers[i];
-    if (Math.abs(px - p.mesh.position.x) > p.w / 2 + 0.5) continue;
-    if (Math.abs(pz - p.mesh.position.z) > p.d / 2 + 0.5) continue;
+    if (Math.abs(x - p.mesh.position.x) > p.w / 2 + 0.5) continue;
+    if (Math.abs(z - p.mesh.position.z) > p.d / 2 + 0.5) continue;
     const top = p.mesh.position.y + p.h / 2;
-    if (top < feet + 0.3 && top > bestTop) { bestTop = top; bestVtop = p.vtop || 0; }
+    if (top < yMax && top > bestTop) { bestTop = top; bestVtop = p.vtop || 0; }
   }
-  // Also check ramps — compute the ramp surface height at the player's XZ position
   for (let i = 0; i < ramps.length; i++) {
     const r = ramps[i];
-    const yRamp = rampHeightAt(r, px, pz);
+    const yRamp = rampHeightAt(r, x, z);
     if (yRamp == null) continue;
-    const vt  = Math.max(r.thickness, 0.7);
+    const vt = Math.max(r.thickness, 0.7);
     const top = yRamp + (vt - r.thickness * 0.5) * r.normal.y;
-    if (top < feet + 0.3 && top > bestTop) { bestTop = top; bestVtop = 0; }
+    if (top < yMax && top > bestTop) { bestTop = top; bestVtop = 0; }
   }
-  if (bestTop > -9999) {
-    const height = Math.max(0, feet - bestTop);
+  return bestTop > -9999 ? bestTop + bestVtop : null;
+}
+
+function updateShadow() {
+  const px = player.position.x, pz = player.position.z;
+  const feet = player.position.y - playerHalf.y;
+  const surfaceY = findSurfaceBelow(px, pz, feet + 0.3);
+  if (surfaceY != null) {
+    const height = Math.max(0, feet - surfaceY);
     const scale  = Math.max(0, 1.0 - height / 10.0);
-    // Place shadow on the visual surface (collision top + visual cap offset + z-fight clearance)
-    shadowMesh.position.set(px, bestTop + bestVtop + 0.03, pz);
+    shadowMesh.position.set(px, surfaceY + 0.03, pz);
     shadowMesh.scale.setScalar(scale * 0.9 + 0.08);
-    shadowMat.opacity  = 0.18 * scale;
     shadowMesh.visible = true;
   } else {
     shadowMesh.visible = false;
@@ -5906,6 +6181,7 @@ function update(dt) {
     ring.rotation.y += dt * 1.6;
     ring.position.y  = ringBaseY + Math.sin(time * 2.4) * 0.35;
   }
+  updateCoinAnimation(dt);
   updateShadow();
 
   // ── Skin selector blocks all game logic ──
@@ -6161,6 +6437,9 @@ function update(dt) {
     triggerSpaceDeath();
   }
   if (!spaceDying && player.position.y < -50) reset();
+
+  // ── Coin collection ──
+  checkCoinCollisions();
 
   // ── Win check ──
   if (ring) {
