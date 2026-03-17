@@ -2861,9 +2861,9 @@ function buildLevel2() {
   boxPlatform({ x: 0,   y: 8.5, z: -155, w: 8,  h: 0.6, d: 8,  color: 0x4A2E10 }); // rich dark bark
 
   // Coins (early / mid / late progression markers)
-  spawnCoin(10,  2.0,  -32);   // Early 21%: above step platform (y=1.0, +1.0)
-  spawnCoin(6,   6.2,  -79);   // Mid 51%: above static platform near saw blade (y=5.2, +1.0)
-  spawnCoin(-5,  7.5, -118);   // Late 76%: above static platform (y=6.5, +1.0)
+  spawnCoin(10,  2.8,  -32);   // Early 21%: +1.5 above platform top 1.3
+  spawnCoin(6,   7.0,  -79);   // Mid 51%: +1.5 above platform top 5.5
+  spawnCoin(-5,  8.3, -118);   // Late 76%: +1.5 above platform top 6.8
 
   levelEndZ = -155;
   spawnRing(0, 10.5, -155);
@@ -2907,9 +2907,9 @@ function buildLevel3() {
   boxPlatform({ x:0,   y:14.4, z:-188, w:8,  h:0.6, d:8,  color:0xFFEE00, neon:true });
 
   // Coins (early / mid / late progression markers)
-  spawnCoin(6,   2.2,  -36);   // Early 19%: above flat approach to ramp (y=1.2, +1.0)
-  spawnCoin(-5,  8.6, -104);   // Mid 55%: above moving X-platform, midpoint X=-5 (y=7.6, +1.0)
-  spawnCoin(-6, 14.7, -161);   // Late 86%: above ramp 2 landing (y=13.7, +1.0)
+  spawnCoin(6,   3.0,  -36);   // Early 19%: +1.5 above platform top 1.5
+  spawnCoin(-5,  9.4, -104);   // Mid 55%: +1.5 above platform top 7.9
+  spawnCoin(-6, 15.5, -161);   // Late 86%: +1.5 above platform top 14.0
 
   levelEndZ = -188;
   spawnRing(0, 16.4, -188);
@@ -3022,9 +3022,9 @@ function buildLevel4() {
   boxPlatform({ x:0,  y:11,   z:-228, w:8,  h:0.7, d:8,  color:0x00CCDD, neon:true });
 
   // Coins (early / mid / late progression markers)
-  spawnCoin(6,   2.0,  -39);   // Early 17%: above cave entry platform (y=1.0, +1.0)
-  spawnCoin(-4,  4.0, -118);   // Mid 52%: above moving X-platform, midpoint X=-4 (y=3.0, +1.0)
-  spawnCoin(2,  10.8, -195);   // Late 86%: above moving X-platform, midpoint X=2 (y=9.8, +1.0)
+  spawnCoin(6,   2.85, -39);   // Early 17%: +1.5 above platform top 1.35
+  spawnCoin(-4,  4.85,-118);   // Mid 52%: +1.5 above platform top 3.35
+  spawnCoin(2,  11.65,-195);   // Late 86%: +1.5 above platform top 10.15
 
   levelEndZ = -228;
   spawnRing(0, 13.5, -228);
@@ -3081,9 +3081,9 @@ function buildLevel5() {
   spawnGeyser( -2, -198, 6.0, 1.8);  // between platform z=-193 and mover z=-204
 
   // Coins (early / mid / late progression markers)
-  spawnCoin(12,  2.5,  -46);   // Early 18%: above static platform (y=1.5, +1.0)
-  spawnCoin(4,  11.5, -139);   // Mid 55%: above moving X-platform, midpoint X=4 (y=10.5, +1.0)
-  spawnCoin(4,  14.5, -204);   // Late 80%: above moving X-platform, midpoint X=4 (y=13.5, +1.0)
+  spawnCoin(12,  3.3,  -46);   // Early 18%: +1.5 above platform top 1.8
+  spawnCoin(4,  12.3, -139);   // Mid 55%: +1.5 above platform top 10.8
+  spawnCoin(4,  15.3, -204);   // Late 80%: +1.5 above platform top 13.8
 
   levelEndZ = -255;
   spawnRing(0, 18.0, -255);
@@ -3406,9 +3406,9 @@ function buildLevel6() {
   boxPlatform({ x: 0,  y:13.0, z:-200, w:8,  h:0.6, d:8,  color:CP.red    }); // raised finale
 
   // Coins (early / mid / late progression markers)
-  spawnCoin(-2,  6.0,  -39);   // Early 20%: above platform after gumdrop bounce (y=5.0, +1.0)
-  spawnCoin(2,   8.0, -102);   // Mid 51%: above main path landing (y=7.0, +1.0)
-  spawnCoin(0,  10.0, -167);   // Late 84%: above moving X-platform, midpoint X=0 (y=9.0, +1.0)
+  spawnCoin(-2,  6.8,  -39);   // Early 20%: +1.5 above platform top 5.3
+  spawnCoin(2,   8.8, -102);   // Mid 51%: +1.5 above platform top 7.3
+  spawnCoin(0,  10.8, -167);   // Late 84%: +1.5 above platform top 9.3
 
   levelEndZ = -200;
   spawnRing(0, 15.0, -200);
@@ -4061,9 +4061,9 @@ function buildLevel7() {
   boxPlatform({ x: 0,  y: 6,   z:-172, w: 8, h:0.6, d: 8, color: NC.slate }); // finale
 
   // Coins (early / mid / late progression markers)
-  spawnCoin(0,   1.0,  -32);   // Early 19%: above Y-elevator, midpoint Y=0 (y=0.0, +1.0)
-  spawnCoin(0,   3.0, -101);   // Mid 59%: above X-mover in wind zone, midpoint X=0 (y=2.0, +1.0)
-  spawnCoin(0,   7.0, -143);   // Late 83%: above X-mover, midpoint X=0 (y=6.0, +1.0)
+  spawnCoin(0,   1.8,  -32);   // Early 19%: +1.5 above platform top 0.3
+  spawnCoin(0,   3.8, -101);   // Mid 59%: +1.5 above platform top 2.3
+  spawnCoin(0,   7.8, -143);   // Late 83%: +1.5 above platform top 6.3
 
   levelEndZ = -172;
   spawnRing(0, 8.0, -172);
@@ -4537,9 +4537,9 @@ function buildLevel8() {
   decorations.push(envLight2);
 
   // Coins (early / mid / late progression markers)
-  spawnCoin(-7,  3.0,  -43);   // Early 26%: above left fork entry (y=2.0, +1.0)
-  spawnCoin(0,   4.0,  -96);   // Mid 57%: above merge platform (y=3.0, +1.0)
-  spawnCoin(0,   6.0, -138);   // Late 83%: above narrow ledge (y=5.0, +1.0)
+  spawnCoin(-7,  3.8,  -43);   // Early 26%: +1.5 above platform top 2.3
+  spawnCoin(0,   4.8,  -96);   // Mid 57%: +1.5 above platform top 3.3
+  spawnCoin(0,   6.8, -138);   // Late 83%: +1.5 above platform top 5.3
 
   levelEndZ = -167;
   spawnRing(0, 9.0, -167);
@@ -4663,9 +4663,9 @@ function buildLevel9() {
   scene.add(el6); decorations.push(el6);
 
   // Coins (early / mid / late progression markers)
-  spawnCoin(5,   4.6,  -76);   // Early 19%: above wind corridor zigzag (y=3.6, +1.0)
-  spawnCoin(0,   8.0, -198);   // Mid 51%: above phase grid center — timing required (y=7.0, +1.0)
-  spawnCoin(0,  11.5, -312);   // Late 80%: above moving bridge, midpoint X=0 (y=10.5, +1.0)
+  spawnCoin(5,   5.4,  -76);   // Early 19%: +1.5 above platform top 3.9
+  spawnCoin(0,   8.8, -198);   // Mid 51%: +1.5 above platform top 7.3
+  spawnCoin(0,  12.3, -312);   // Late 80%: +1.5 above platform top 10.8
 
   levelEndZ = -392;
   spawnRing(0, 16.0, -392);
@@ -5005,7 +5005,7 @@ const MAX_LEVEL = 9;
 
 // ── Star target times (seconds) — 2-star threshold per level ──
 const LEVEL_STAR_TIMES = {
-  1: 45, 2: 50, 3: 55, 4: 60, 5: 65,
+  0: 30, 1: 45, 2: 50, 3: 55, 4: 60, 5: 65,
   6: 70, 7: 75, 8: 80, 9: 85,
 };
 const TOTAL_COINS_PER_LEVEL = 3;
@@ -5020,7 +5020,7 @@ function generatePlayerId() {
 
 function ensureLevelStats(prog) {
   if (!prog.levelStats) prog.levelStats = {};
-  for (let lvl = 1; lvl <= MAX_LEVEL; lvl++) {
+  for (let lvl = 0; lvl <= MAX_LEVEL; lvl++) {
     const key = String(lvl);
     if (!prog.levelStats[key]) {
       prog.levelStats[key] = { bestTime: null, coins: 0, stars: 0, completed: false };
