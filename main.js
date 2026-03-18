@@ -982,6 +982,7 @@ function spawnCoin(x, y, z) {
   glow.rotation.x = Math.PI / 2;
   mesh.add(glow);
 
+  mesh.rotation.z = 0.15;  // ~8.6° tilt for premium feel
   mesh.position.set(x, y, z);
   coinGroup.add(mesh);
 
@@ -1006,8 +1007,8 @@ function spawnCoinBurst(x, y, z) {
   geo.setAttribute("position", new THREE.BufferAttribute(pos3, 3));
   if (!coinBurstMat) {
     coinBurstMat = new THREE.PointsMaterial({
-      size: 0.38, color: 0xFFE066, transparent: true, opacity: 1.0,
-      depthWrite: false, blending: THREE.AdditiveBlending,
+      size: 0.38, color: 0xFFD84D, transparent: true, opacity: 0.9,
+      depthWrite: false, blending: THREE.NormalBlending,
     });
   }
   const mat = coinBurstMat.clone();
@@ -1057,6 +1058,10 @@ function collectCoin(coin) {
   coin.mesh.visible = false;
   coin.shadow.visible = false;
   onCoinCollected();
+  // Extra burst for final coin
+  if (coinsCollectedThisRun === TOTAL_COINS_PER_LEVEL) {
+    spawnCoinBurst(coin.mesh.position.x, coin.mesh.position.y + 0.3, coin.mesh.position.z);
+  }
 }
 
 function checkCoinCollisions() {
@@ -2886,7 +2891,7 @@ function buildLevel3() {
 
   // === Section 3: Turn — layout shifts x from 6 to -7 while continuing -z ===
   boxPlatform({ x:3,   y:7.0,  z:-86,  w:5,  h:0.6, d:5,  color:0xCC00FF, neon:true });
-  pendulumObstacle({ x:3, y:13.25, z:-86, armLength:5.0, speed:2.0, amplitude:1.1, color:0xFF1166, neon:true, sphere:true, sphereRadius:1.9 });
+  pendulumObstacle({ x:3, y:14.2, z:-86, armLength:5.0, speed:2.0, amplitude:1.1, color:0xFF1166, neon:true, sphere:true, sphereRadius:1.9 });
   boxPlatform({ x:-1,  y:7.3,  z:-95,  w:5,  h:0.6, d:5,  color:0x00EEFF, neon:true });
   movingPlatform({ x:-5, y:7.6, z:-104, w:5,  h:0.6, d:5, axis:"x", amplitude:4.5, speed:1.5,             color:0xFF6600, neon:true });
   boxPlatform({ x:-7,  y:7.9,  z:-113, w:4,  h:0.6, d:4,  color:0x00FFAA, neon:true });
@@ -2902,14 +2907,14 @@ function buildLevel3() {
 
   // === Section 5: Final push ===
   boxPlatform({ x:-3,  y:13.8, z:-170, w:5,  h:0.6, d:5,  color:0x3399FF, neon:true });
-  pendulumObstacle({ x:-3, y:21.0, z:-170, armLength:6.0, speed:2.2, amplitude:1.05, color:0xFF8800, neon:true, sphere:true, sphereRadius:1.9 });
+  pendulumObstacle({ x:-3, y:22.0, z:-170, armLength:6.0, speed:2.2, amplitude:1.05, color:0xFF8800, neon:true, sphere:true, sphereRadius:1.9 });
   movingPlatform({ x:0,  y:14.1, z:-179, w:5,  h:0.6, d:5, axis:"x", amplitude:4.0, speed:2.0, phase:0.5, color:0xCC00FF, neon:true });
   boxPlatform({ x:0,   y:14.4, z:-188, w:8,  h:0.6, d:8,  color:0xFFEE00, neon:true });
 
   // Coins (early / mid / late progression markers)
-  spawnCoin(6,   3.0,  -36);   // Early 19%: +1.5 above platform top 1.5
+  spawnCoin(5,   4.2,  -30.5); // Early: aerial between platforms, 2.5x offset
   spawnCoin(-5,  9.4, -104);   // Mid 55%: +1.5 above platform top 7.9
-  spawnCoin(-6, 15.5, -161);   // Late 86%: +1.5 above platform top 14.0
+  spawnCoin(-6, 17.3, -161);   // Late: aerial collect, 2.5x offset above platform
 
   levelEndZ = -188;
   spawnRing(0, 16.4, -188);
@@ -3004,7 +3009,7 @@ function buildLevel4() {
   movingPlatform({ x:-4, y:3,    z:-118, w:4,  h:0.7, d:4,  axis:"x", amplitude:5.5, speed:1.8,  color:0xFF00CC, neon:true });
   stalactitePendulum({ x:-3, y:14, z:-112, armLength:8.0, tipRadius:1.0, tipHeight:4.0, speed:2.0, amplitude:1.05, color:0x8844FF });
   bouncePad({ x:-3, y:3.5, z:-125, bounceSpeed:20 });       // === Bounce pad 2 (middle) ===
-  boxPlatform({ x:-5, y:9,    z:-139, w:5,  h:0.7, d:5,  color:0x0088FF, neon:true }); // elevated bounce landing
+  boxPlatform({ x:-5, y:6.8,  z:-139, w:5,  h:0.7, d:5,  color:0x0088FF, neon:true }); // lowered bounce landing
   boxPlatform({ x:-3, y:4,    z:-140, w:4,  h:0.7, d:4,  color:0x00FFAA, neon:true });
   boxPlatform({ x:-2, y:4.5,  z:-151, w:5,  h:0.7, d:5,  color:0x6633FF, neon:true });
 
@@ -3022,7 +3027,7 @@ function buildLevel4() {
   boxPlatform({ x:0,  y:11,   z:-228, w:8,  h:0.7, d:8,  color:0x00CCDD, neon:true });
 
   // Coins (early / mid / late progression markers)
-  spawnCoin(6,   2.85, -39);   // Early 17%: +1.5 above platform top 1.35
+  spawnCoin(8,   5.2,  -50);   // Early 17%: reward mushroom bounce jump
   spawnCoin(-4,  4.85,-118);   // Mid 52%: +1.5 above platform top 3.35
   spawnCoin(2,  11.65,-195);   // Late 86%: +1.5 above platform top 10.15
 
@@ -3388,7 +3393,7 @@ function buildLevel6() {
   boxPlatform({ x: 2,  y:7.0, z:-102, w:5,  h:0.6, d:4,  color:CP.white  }); // main path: own landing platform
 
   // === Section 3: Two-hop orange gumdrop sequence ===
-  lollipopPendulum({ x:0, y:16, z:-108, armLength:7.5, ballRadius:1.9, speed:2.3, amplitude:1.10, stickColor:0xCCAAFF, ballColor:0x88DDFF });
+  lollipopPendulum({ x:0, y:18.2, z:-108, armLength:7.5, ballRadius:1.9, speed:2.3, amplitude:1.10, stickColor:0xCCAAFF, ballColor:0x88DDFF });
   gumDropPad({ x:-3,  y:7.0, z:-110,  w:3, d:3, bounceSpeed:20, color:0xFF8800 }); // ORANGE #1 — first hop past pendulum
   gumDropPad({ x: 0,  y:7.4, z:-119,  w:3, d:3, bounceSpeed:20, color:0xFF8800 }); // ORANGE #2 — second hop, big bounce
   boxPlatform({ x: 2,  y:11.5, z:-131, w:5,  h:0.6, d:5,  color:CP.white  }); // elevated — requires bounce from orange #2
@@ -4847,6 +4852,7 @@ function loadLevel(n, skipUI = false) {
   }
 
   levelNameHud.textContent = LEVEL_NAMES[n] || "";
+  showGameplayHUD(n);
   if (!skipUI) startCountdown(n);
 }
 
@@ -4974,6 +4980,33 @@ const countdownTitle    = document.getElementById("countdown-title");
 const countdownSubtitle = document.getElementById("countdown-subtitle");
 const countdownNumber   = document.getElementById("countdown-number");
 const levelNameHud      = document.getElementById("level-name-hud");
+const coinHudEl         = document.getElementById("coin-hud");
+const hudEl             = document.getElementById("hud");
+const hudRightEl        = document.getElementById("hud-right");
+let controlsHidden      = false;
+
+function hideGameplayHUD() {
+  hudRightEl.classList.remove("visible");
+  hudEl.classList.remove("visible", "hiding");
+}
+
+function showGameplayHUD(level) {
+  hudRightEl.classList.add("visible");
+  if (level === 1) {
+    hudEl.classList.remove("hiding");
+    hudEl.classList.add("visible");
+    controlsHidden = false;
+  } else {
+    hudEl.classList.remove("visible");
+  }
+}
+
+function hideControlsHUD() {
+  if (controlsHidden) return;
+  controlsHidden = true;
+  hudEl.classList.add("hiding");
+  hudEl.classList.remove("visible");
+}
 
 const LEVEL_NAMES = {
   0: "Parkour Tutorial",
@@ -5176,6 +5209,10 @@ function getTotalCoins() {
   return total;
 }
 
+function getMaxAvailableCoins() {
+  return MAX_LEVEL * TOTAL_COINS_PER_LEVEL;
+}
+
 // ===== Firebase Progress Sync =====
 async function saveProgressToFirebase(prog) {
   try {
@@ -5264,6 +5301,24 @@ let coinsCollectedThisRun = 0;
 
 function onCoinCollected() {
   coinsCollectedThisRun++;
+  coinHudEl.textContent = `Coins ${coinsCollectedThisRun} / ${TOTAL_COINS_PER_LEVEL}`;
+  if (coinsCollectedThisRun === TOTAL_COINS_PER_LEVEL) {
+    // Final coin: bigger pulse + "ALL COINS!" flash
+    coinHudEl.classList.remove("pop", "coin-complete");
+    void coinHudEl.offsetWidth;
+    coinHudEl.classList.add("coin-complete");
+    const allEl = document.getElementById("coin-all");
+    allEl.classList.remove("show");
+    void allEl.offsetWidth;
+    allEl.classList.add("show");
+  } else {
+    // Normal coin: standard pop
+    coinHudEl.classList.remove("pop");
+    void coinHudEl.offsetWidth;
+    coinHudEl.classList.add("pop");
+  }
+  // Auto-hide Level 1 controls on any coin pickup
+  if (currentLevel === 1) hideControlsHUD();
 }
 
 function formatTime(t) {
@@ -5409,6 +5464,7 @@ function setupLevelScrollState() {
 }
 
 function showHomeScreen() {
+  hideGameplayHUD();
   const overlay     = document.getElementById("skin-overlay");
   const swatches    = overlay.querySelectorAll(".skin-swatch");
   const continueBtn = document.getElementById("btn-continue");
@@ -5431,6 +5487,22 @@ function showHomeScreen() {
   // Continue button — starts at highest unlocked level
   continueBtn.textContent = `CONTINUE \u2014 LEVEL ${highestUnlockedLevel}`;
   continueBtn.onclick = () => launchLevel(highestUnlockedLevel, selectedColor);
+
+  // Total progress (stars + coins)
+  const totalStars = getTotalStars();
+  const totalCoins = getTotalCoins();
+  const maxStars = MAX_LEVEL * 3;
+  const maxCoins = getMaxAvailableCoins();
+  const starPct = maxStars > 0 ? Math.round((totalStars / maxStars) * 100) : 0;
+  const coinPct = maxCoins > 0 ? Math.round((totalCoins / maxCoins) * 100) : 0;
+  document.getElementById("total-stars").innerHTML =
+    `<span class="progress-stars">\u2605 ${totalStars} / ${maxStars}</span> Stars <span class="progress-pct">(${starPct}%)</span>`;
+  document.getElementById("total-coins").innerHTML =
+    `<span class="progress-coins">\u25CF ${totalCoins} / ${maxCoins}</span> Coins <span class="progress-pct">(${coinPct}%)</span>`;
+  const totalProgressEl = document.getElementById("total-progress");
+  totalProgressEl.classList.remove("update");
+  void totalProgressEl.offsetWidth;
+  totalProgressEl.classList.add("update");
 
   // Level grid — mark unlocked / locked / current-highest
   levelCells.forEach(cell => {
@@ -5838,6 +5910,7 @@ async function getTopScores(level, max = 5) {
   }
 }
 function showLeaderboard(level, top5, myTime, myIdx, isLastLevel) {
+  hideGameplayHUD();
   lbTitle.textContent = `Level ${level} — Top Times`;
   let rows = `<thead><tr><th>Rank</th><th>Name</th><th>Time</th></tr></thead><tbody>`;
   if (top5.length === 0) {
@@ -5871,6 +5944,7 @@ function showLeaderboard(level, top5, myTime, myIdx, isLastLevel) {
   };
 }
 function showRewardScreen(summary) {
+  hideGameplayHUD();
   const rewardOverlay = document.getElementById("reward-overlay");
   document.getElementById("reward-title").textContent = "LEVEL COMPLETE!";
   document.getElementById("reward-level-name").textContent = LEVEL_NAMES[summary.level] || `Level ${summary.level}`;
@@ -5930,6 +6004,7 @@ function showRewardScreen(summary) {
 }
 
 function showNameEntry(finalTime, isLastLevel) {
+  hideGameplayHUD();
   levelCompleteMsg.textContent  = `Level ${currentLevel} complete!`;
   finalTimeDisplay.textContent  = formatTime(finalTime);
   nameInput.value = progress.playerName && progress.playerName !== "Anonymous"
@@ -6169,6 +6244,7 @@ function reset() {
   coinsCollectedThisRun = 0;
   resetCoins();
   timerEl.textContent      = formatTime(0);
+  coinHudEl.textContent    = `Coins 0 / ${TOTAL_COINS_PER_LEVEL}`;
   progressFill.style.width = "0%";
   trailHistory.length = 0;
 
@@ -6188,6 +6264,13 @@ function reset() {
     pp.mesh.visible = true;
     for (const m of pp.allMats) m.opacity = m._baseOpacity;
   }
+
+  // Clean up HUD animation state
+  coinHudEl.classList.remove("pop", "coin-complete");
+  const coinAllEl = document.getElementById("coin-all");
+  if (coinAllEl) coinAllEl.classList.remove("show");
+  controlsHidden = false;
+  if (currentLevel === 1) { hudEl.classList.remove("hiding"); hudEl.classList.add("visible"); }
 
   // Re-show joystick ghost hint on mobile after respawn
   if (window._showJoystickHint) window._showJoystickHint();
@@ -6421,6 +6504,12 @@ function update(dt) {
   timerEl.textContent = formatTime(levelTime);
   progressFill.style.width =
     Math.min(100, Math.max(0, (-player.position.z / Math.abs(levelEndZ)) * 100)).toFixed(1) + "%";
+
+  // Auto-hide Level 1 controls after 50% progress or 10s
+  if (!controlsHidden && currentLevel === 1) {
+    const prog = -player.position.z / Math.abs(levelEndZ);
+    if (prog >= 0.5 || levelTime >= 10) hideControlsHUD();
+  }
 
   // ── Moving platform carry ──
   if (grounded && groundObject && groundObject.type === "mover") {

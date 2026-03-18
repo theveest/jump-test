@@ -17,27 +17,72 @@
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #4a8fd4; }
 
-      /* ── HUD ── */
+      /* ── HUD (Level 1 controls only) ── */
       #hud {
         position: fixed; top: 12px; left: 12px;
         font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial;
-        color: #e6edf3; background: rgba(0,0,0,.38);
-        padding: 10px 12px; border-radius: 10px; backdrop-filter: blur(6px);
+        color: #e6edf3; background: rgba(0,0,0,.28);
+        padding: 8px 10px; border-radius: 8px; backdrop-filter: blur(6px);
         max-width: 360px; user-select: none;
+        opacity: 0; visibility: hidden;
+        transition: opacity .45s ease, visibility .45s, transform .45s ease;
+        transform: translateY(0);
       }
-      @media (pointer: coarse) { #hud { display: none; } }
+      #hud.visible { opacity: 0.85; visibility: visible; transform: translateY(0); }
+      #hud.hiding  { opacity: 0; visibility: hidden; transform: translateY(-6px); }
+      @media (pointer: coarse) { #hud { display: none !important; } }
       kbd {
         background: #111827; padding: 2px 6px; border-radius: 6px;
         border: 1px solid #30363d; margin-right: 2px;
       }
 
-      /* ── Timer ── */
-      #timer {
+      /* ── Right HUD (timer + coins) ── */
+      #hud-right {
         position: fixed; top: 12px; right: 12px;
-        font: bold 22px/1 system-ui; font-variant-numeric: tabular-nums;
-        color: #fff; background: rgba(0,0,0,.38);
-        padding: 9px 16px; border-radius: 10px; backdrop-filter: blur(6px);
-        user-select: none; letter-spacing: .02em;
+        background: rgba(0,0,0,.38); border-radius: 10px; backdrop-filter: blur(6px);
+        padding: 9px 16px 7px; user-select: none;
+        opacity: 0; transition: opacity .3s ease;
+        text-align: right;
+      }
+      #hud-right.visible { opacity: 1; }
+      #timer {
+        font: bold 28px/1 system-ui; font-variant-numeric: tabular-nums;
+        color: #fff; letter-spacing: .02em; opacity: 0.95;
+      }
+      #coin-hud {
+        font: 600 14px/1 system-ui; font-variant-numeric: tabular-nums;
+        color: #FFD84D; letter-spacing: .02em; opacity: 0.75;
+        margin-top: 4px;
+      }
+      @keyframes coin-pop {
+        0%   { transform: scale(1); }
+        50%  { transform: scale(1.15); }
+        100% { transform: scale(1); }
+      }
+      #coin-hud.pop { animation: coin-pop .18s ease; }
+      /* Final coin completion feedback */
+      @keyframes coin-complete-pulse {
+        0%   { transform: scale(1); }
+        30%  { transform: scale(1.2); }
+        100% { transform: scale(1); }
+      }
+      #coin-hud.coin-complete { animation: coin-complete-pulse .3s ease; }
+      #coin-all {
+        font: 700 13px/1 system-ui; color: #FFD84D;
+        letter-spacing: .08em; text-transform: uppercase;
+        margin-top: 2px; opacity: 0; pointer-events: none;
+      }
+      #coin-all.show { animation: coin-all-flash 1.2s ease forwards; }
+      @keyframes coin-all-flash {
+        0%   { opacity: 0; }
+        15%  { opacity: 1; }
+        70%  { opacity: 1; }
+        100% { opacity: 0; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #hud.hiding { transition: none; }
+        #coin-hud.coin-complete { animation: none; }
+        #coin-all.show { animation: none; opacity: 1; }
       }
 
       /* ── Shared overlay backdrop ── */
@@ -394,6 +439,29 @@
       #btn-continue:hover { background: linear-gradient(135deg, #ffe84d, #FFB833); transform: scale(1.02); }
       #btn-continue:active { transform: scale(0.98); }
 
+      /* ── Total progress (stars + coins) ── */
+      #total-progress {
+        display: flex; justify-content: center; align-items: center; gap: 34px;
+        margin: 10px 0 18px; padding: 10px 0;
+        font: 600 14px/1 system-ui;
+        letter-spacing: .04em; user-select: none;
+        border-top: 1px solid rgba(255,255,255,.08);
+        border-bottom: 1px solid rgba(255,255,255,.08);
+      }
+      .progress-stat { color: rgba(255,255,255,.78); }
+      .progress-stars { color: #FFD84D; }
+      .progress-coins { color: #E6C75A; }
+      .progress-pct { color: rgba(255,255,255,.40); font-weight: 400; margin-left: 4px; }
+      @keyframes progress-update {
+        0%   { transform: scale(1); }
+        40%  { transform: scale(1.06); }
+        100% { transform: scale(1); }
+      }
+      #total-progress.update { animation: progress-update .25s ease; }
+      @media (max-width: 480px) {
+        #total-progress { gap: 20px; font-size: 13px; }
+      }
+
       /* ── Level Select heading ── */
       #level-select-heading {
         font: 600 13px/1 system-ui;
@@ -562,18 +630,18 @@
   </head>
   <body>
 
-    <!-- HUD -->
+    <!-- HUD (Level 1 controls only) -->
     <div id="hud">
-      <div><strong>JUMP (prototype)</strong></div>
-      <div>
-        Move: ↑ ← ↓ → or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
-        &nbsp; Jump: <kbd>Space</kbd>
-        &nbsp; Reset: <kbd>R</kbd>
-      </div>
+      <div>Move: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or ↑←↓→</div>
+      <div>Jump: <kbd>Space</kbd> &nbsp; Reset: <kbd>R</kbd></div>
     </div>
 
-    <!-- Timer -->
-    <div id="timer">0:00.0</div>
+    <!-- Timer + Coin counter -->
+    <div id="hud-right">
+      <div id="timer">0:00.0</div>
+      <div id="coin-hud">Coins 0 / 3</div>
+      <div id="coin-all">ALL COINS!</div>
+    </div>
 
     <!-- Reward screen overlay -->
     <div class="overlay" id="reward-overlay">
@@ -653,6 +721,11 @@
           <button id="btn-continue">CONTINUE &mdash; LEVEL 4</button>
         </div>
 
+        <div id="total-progress">
+          <div class="progress-stat" id="total-stars"></div>
+          <div class="progress-stat" id="total-coins"></div>
+        </div>
+
         <!-- SCROLLABLE MIDDLE — only this section scrolls -->
         <div class="home-levels">
           <div id="level-select-heading">LEVEL SELECT</div>
@@ -705,6 +778,6 @@
       </div>
     </div>
 
-    <script type="module" src="./main.js?v=12"></script>
+    <script type="module" src="./main.js?v=21"></script>
   </body>
 </html>
