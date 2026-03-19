@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>JUMP (prototype)</title>
+    <title>JUMP!</title>
 
     <script type="importmap">
     {
@@ -19,7 +19,7 @@
 
       /* ── HUD (Level 1 controls only) ── */
       #hud {
-        position: fixed; top: 12px; left: 12px;
+        position: fixed; top: 12px; left: 62px;
         font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial;
         color: #e6edf3; background: rgba(0,0,0,.28);
         padding: 8px 10px; border-radius: 8px; backdrop-filter: blur(6px);
@@ -39,20 +39,26 @@
       /* ── Right HUD (timer + coins) ── */
       #hud-right {
         position: fixed; top: 12px; right: 12px;
+        display: flex; flex-direction: column; align-items: flex-end;
         background: rgba(0,0,0,.38); border-radius: 10px; backdrop-filter: blur(6px);
-        padding: 9px 16px 7px; user-select: none;
+        padding: 8px 14px; user-select: none;
         opacity: 0; transition: opacity .3s ease;
-        text-align: right;
       }
       #hud-right.visible { opacity: 1; }
+      .hud-divider {
+        width: 100%; height: 1px;
+        background: rgba(255,255,255,.10);
+        margin: 3px 0 4px;
+      }
+      .coin-count { color: #FFE066; }
       #timer {
         font: bold 28px/1 system-ui; font-variant-numeric: tabular-nums;
-        color: #fff; letter-spacing: .02em; opacity: 0.95;
+        color: #fff; letter-spacing: .03em; opacity: 0.95;
       }
       #coin-hud {
-        font: 600 14px/1 system-ui; font-variant-numeric: tabular-nums;
-        color: #FFD84D; letter-spacing: .02em; opacity: 0.75;
-        margin-top: 4px;
+        font: 600 13px/1 system-ui; font-variant-numeric: tabular-nums;
+        color: rgba(255,255,255,.45); letter-spacing: .02em;
+        text-shadow: 0 1px 3px rgba(0,0,0,.5);
       }
       @keyframes coin-pop {
         0%   { transform: scale(1); }
@@ -68,6 +74,7 @@
       }
       #coin-hud.coin-complete { animation: coin-complete-pulse .3s ease; }
       #coin-all {
+        position: absolute; right: 14px;
         font: 700 13px/1 system-ui; color: #FFD84D;
         letter-spacing: .08em; text-transform: uppercase;
         margin-top: 2px; opacity: 0; pointer-events: none;
@@ -79,11 +86,94 @@
         70%  { opacity: 1; }
         100% { opacity: 0; }
       }
+      @keyframes coin-glow-pulse {
+        0%   { box-shadow: 0 0 0 rgba(255,224,102,0); }
+        40%  { box-shadow: 0 0 14px rgba(255,224,102,.28); }
+        100% { box-shadow: 0 0 0 rgba(255,224,102,0); }
+      }
+      #hud-right.coin-glow { animation: coin-glow-pulse .28s ease; }
       @media (prefers-reduced-motion: reduce) {
         #hud.hiding { transition: none; }
         #coin-hud.coin-complete { animation: none; }
         #coin-all.show { animation: none; opacity: 1; }
+        #hud-right.coin-glow { animation: none; }
       }
+
+      /* ── Home / pause button ── */
+      #home-btn {
+        position: fixed; top: 12px; left: 12px;
+        width: 42px; height: 42px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 20px; font-weight: 600; color: white;
+        background: rgba(0,0,0,.35); backdrop-filter: blur(6px);
+        border-radius: 10px; cursor: pointer;
+        opacity: 0; visibility: hidden;
+        transition: opacity .3s ease, visibility .3s, transform .15s ease;
+        user-select: none; z-index: 20;
+      }
+      #home-btn.visible { opacity: .75; visibility: visible; }
+      #home-btn:hover { opacity: 1; transform: scale(1.05); }
+      @media (pointer: coarse) {
+        #home-btn { top: 16px; left: 16px; width: 48px; height: 48px; }
+      }
+
+      /* ── Pause overlay helpers ── */
+      #pause-card { position: relative; }
+      .pause-gear {
+        position: absolute; top: 14px; right: 14px;
+        width: 34px; height: 34px;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.10);
+        border-radius: 50%; cursor: pointer;
+        font-size: 16px; color: rgba(255,255,255,.50);
+        transition: color .15s, background .15s, border-color .15s;
+      }
+      .pause-gear:hover {
+        color: rgba(255,255,255,.75);
+        background: rgba(255,255,255,.12);
+        border-color: rgba(255,255,255,.18);
+      }
+      .pause-copy {
+        font: 500 14px/1.5 system-ui; color: rgba(255,255,255,.65);
+        margin: 8px 0 18px; text-align: center;
+        max-width: 240px; margin-left: auto; margin-right: auto;
+      }
+      .pause-buttons {
+        display: flex; flex-direction: column; gap: 8px; align-items: center;
+      }
+      .pause-buttons button { width: 100%; max-width: 220px; }
+      @media (max-width: 480px) {
+        .pause-gear { top: 10px; right: 10px; width: 30px; height: 30px; font-size: 14px; }
+        .pause-buttons button { max-width: 100%; }
+      }
+
+      /* ── Settings toggle styles ── */
+      .sr-only {
+        position: absolute; width: 1px; height: 1px;
+        padding: 0; margin: -1px; overflow: hidden;
+        clip: rect(0,0,0,0); border: 0;
+      }
+      .settings-list { margin: 12px 0 20px; }
+      .settings-row {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 10px 0; cursor: pointer; user-select: none;
+        font: 500 15px/1 system-ui; color: rgba(255,255,255,.85);
+        border-bottom: 1px solid rgba(255,255,255,.06);
+      }
+      .settings-row:last-child { border-bottom: none; }
+      .toggle-switch {
+        width: 40px; height: 22px; border-radius: 11px;
+        background: rgba(255,255,255,.15);
+        position: relative; transition: background .2s;
+        flex-shrink: 0; margin-left: 16px;
+      }
+      .toggle-switch::after {
+        content: ""; position: absolute; top: 3px; left: 3px;
+        width: 16px; height: 16px; border-radius: 50%;
+        background: white; transition: transform .2s;
+      }
+      .sr-only:checked + .toggle-switch { background: #FFD700; }
+      .sr-only:checked + .toggle-switch::after { transform: translateX(18px); }
 
       /* ── Shared overlay backdrop ── */
       .overlay {
@@ -206,7 +296,8 @@
           z-index: 10;
         }
         /* On mobile, push progress area up above the controls */
-        #progress-area { bottom: 190px; }
+        #progress-area { bottom: 160px; }
+        #progress-wrap { height: 4px; }
       }
 
       /* ── Virtual thumbstick ── */
@@ -245,7 +336,7 @@
       /* ── Joystick ghost hint (discoverability) ── */
       #joystick-hint {
         position: absolute;
-        bottom: 100px; left: 60px;
+        bottom: 70px; left: 60px;
         display: flex; flex-direction: column;
         align-items: center; gap: 10px;
         pointer-events: none;
@@ -316,6 +407,7 @@
       }
       /* ── Home card — flex column layout ── */
       #home-card {
+        position: relative;
         max-height: calc(100vh - 40px);
         max-height: calc(100dvh - 40px);
         overflow: hidden;
@@ -575,9 +667,16 @@
 
       /* ── Player ID area ── */
       #player-id-area {
-        display: flex; align-items: center; gap: 6px;
         margin-top: 10px;
         font: 400 11px/1 system-ui; color: rgba(255,255,255,.3);
+      }
+      #player-id-hint {
+        font: 400 10px/1.4 system-ui;
+        color: rgba(255,255,255,.38);
+        margin-bottom: 6px;
+      }
+      #player-id-row {
+        display: flex; align-items: center; gap: 6px;
       }
       #player-id-display {
         font-family: monospace; font-size: 10px;
@@ -623,7 +722,7 @@
         .level-label { font-size: 9px; }
         #btn-reset-progress { font-size: 11px; padding: 8px; }
         .home-footer { padding-top: 10px; margin-top: 6px; }
-        #player-id-area { flex-wrap: wrap; }
+        #player-id-row { flex-wrap: wrap; }
         #player-id-display { max-width: 140px; font-size: 9px; }
       }
     </style>
@@ -639,8 +738,54 @@
     <!-- Timer + Coin counter -->
     <div id="hud-right">
       <div id="timer">0:00.0</div>
-      <div id="coin-hud">Coins 0 / 3</div>
+      <div class="hud-divider"></div>
+      <div id="coin-hud"><span class="coin-count">● 0/3</span> Coins</div>
       <div id="coin-all">ALL COINS!</div>
+    </div>
+
+    <!-- Home / pause button -->
+    <div id="home-btn" aria-label="Open pause menu">&#x2302;</div>
+
+    <!-- Pause / menu overlay -->
+    <div class="overlay" id="pause-overlay">
+      <!-- Main pause view -->
+      <div class="modal-card" id="pause-card">
+        <button id="pause-settings" class="pause-gear" title="Settings">&#9881;</button>
+        <h2>Paused</h2>
+        <div class="pause-copy">Take a break or return to the home screen.</div>
+        <div class="pause-buttons">
+          <button id="pause-resume" class="reward-btn reward-btn-primary">Resume</button>
+          <button id="pause-restart" class="reward-btn reward-btn-secondary">Restart</button>
+          <button id="pause-home" class="reward-btn reward-btn-secondary">Home</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings overlay (shared between pause + home) -->
+    <div class="overlay" id="settings-overlay">
+      <div class="modal-card" id="settings-card">
+        <h2>Settings</h2>
+        <div class="settings-list">
+          <label class="settings-row">
+            <span>Sound Effects</span>
+            <input type="checkbox" id="setting-sfx" class="sr-only" checked>
+            <span class="toggle-switch"></span>
+          </label>
+          <label class="settings-row">
+            <span>Music</span>
+            <input type="checkbox" id="setting-music" class="sr-only" checked>
+            <span class="toggle-switch"></span>
+          </label>
+          <label class="settings-row">
+            <span>Vibration</span>
+            <input type="checkbox" id="setting-vibration" class="sr-only" checked>
+            <span class="toggle-switch"></span>
+          </label>
+        </div>
+        <div class="pause-buttons">
+          <button id="settings-back" class="reward-btn reward-btn-primary">Back</button>
+        </div>
+      </div>
     </div>
 
     <!-- Reward screen overlay -->
@@ -692,6 +837,7 @@
     <!-- Home screen overlay (vehicle color + continue + level select) -->
     <div class="overlay" id="skin-overlay">
       <div class="modal-card" id="home-card">
+        <button id="home-settings" class="pause-gear" title="Settings">&#9881;</button>
         <!-- HEADER — stays fixed at top -->
         <div class="home-header">
           <img id="skin-logo" src="jump_logo2.png" alt="JUMP!" />
@@ -736,10 +882,13 @@
         <div class="home-footer">
           <button id="btn-reset-progress">RESET PROGRESS</button>
           <div id="player-id-area">
-            <span id="player-id-label">Player ID:</span>
-            <span id="player-id-display"></span>
-            <button id="btn-copy-id" title="Copy Player ID">📋</button>
-            <button id="btn-restore-id" title="Restore from another device">🔄</button>
+            <div id="player-id-hint">Use your Player ID to back up or transfer progress between devices.</div>
+            <div id="player-id-row">
+              <span id="player-id-label">Your ID:</span>
+              <span id="player-id-display"></span>
+              <button id="btn-copy-id" title="Copy Player ID to clipboard">📋</button>
+              <button id="btn-restore-id" title="Restore progress from another device">🔄</button>
+            </div>
           </div>
         </div>
       </div>

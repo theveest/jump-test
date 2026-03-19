@@ -17,6 +17,141 @@ const firebaseApp = initializeApp({
 });
 const db = getFirestore(firebaseApp);
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Audio Manager
+// ═══════════════════════════════════════════════════════════════════════════
+const AudioMgr = (() => {
+  let ctx = null;
+  let unlocked = false;
+  let masterGain = null;
+  const buffers = {};
+
+  function getCtx() {
+    if (!ctx) {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      masterGain = ctx.createGain();
+      masterGain.connect(ctx.destination);
+    }
+    return ctx;
+  }
+
+  function unlock() {
+    if (unlocked) return;
+    const c = getCtx();
+    if (c.state === "suspended") c.resume();
+    unlocked = true;
+  }
+
+  async function load(name, url) {
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) return;
+      const data = await resp.arrayBuffer();
+      buffers[name] = await getCtx().decodeAudioData(data);
+    } catch (e) { /* fail silently — missing asset won't break game */ }
+  }
+
+  async function init() {
+    const base = "assets/audio/";
+    await Promise.all([
+      load("coin",     base + "coin_01.wav"),
+      load("jump",     base + "jump_01.wav"),
+      load("crash",    base + "crash_01.wav"),
+      load("complete", base + "complete_01.wav"),
+      load("uiClick",  base + "ui_click_01.wav"),
+    ]);
+  }
+
+  function playSfx(name, opts = {}) {
+    if (typeof progress !== "undefined" && progress?.settings?.sfxEnabled === false) return;
+    const buf = buffers[name];
+    if (!buf) return;
+    try {
+      const c = getCtx();
+      if (c.state === "suspended") return;
+      const src = c.createBufferSource();
+      src.buffer = buf;
+      if (opts.pitchVar) {
+        src.playbackRate.value = 1 + (Math.random() - 0.5) * opts.pitchVar;
+      }
+      const gain = c.createGain();
+      gain.gain.value = opts.volume ?? 1.0;
+      src.connect(gain);
+      gain.connect(masterGain);
+      src.start(0);
+    } catch (e) { /* fail silently */ }
+  }
+
+  function playUiClick() { playSfx("uiClick", { volume: 0.5 }); }
+
+  // ── Ambient loop system ──
+  let ambientAudio = null;
+  let ambientName  = null;
+  const AMB_VOLUME  = 0.10;   // very low — barely noticed
+  const AMB_FADE_MS = 800;    // fade in/out duration
+
+  const ambientMap = {
+    wind:  "assets/audio/amb_wind_01.wav",
+    lava:  "assets/audio/amb_lava_01.wav",
+    storm: "assets/audio/amb_storm_01.wav",
+  };
+
+  function fadeOut(audio, cb) {
+    if (!audio) { if (cb) cb(); return; }
+    const start = audio.volume;
+    const step = start / (AMB_FADE_MS / 16);
+    const iv = setInterval(() => {
+      try { audio.volume = Math.max(0, audio.volume - step); } catch (e) { clearInterval(iv); if (cb) cb(); return; }
+      if (audio.volume <= 0) {
+        clearInterval(iv);
+        try { audio.pause(); audio.src = ""; } catch (e) {}
+        if (cb) cb();
+      }
+    }, 16);
+  }
+
+  function playAmbient(name) {
+    if (!name || !ambientMap[name]) { stopAmbient(); return; }
+    if (ambientName === name && ambientAudio && !ambientAudio.paused) return; // already playing same track
+    const startNew = () => {
+      if (typeof progress !== "undefined" && progress?.settings?.musicEnabled === false) return;
+      try {
+        ambientAudio = new Audio(ambientMap[name]);
+        ambientAudio.loop = true;
+        ambientAudio.volume = 0;
+        ambientAudio.play().catch(() => {});
+        ambientName = name;
+        // Fade in
+        const step = AMB_VOLUME / (AMB_FADE_MS / 16);
+        const iv = setInterval(() => {
+          if (!ambientAudio) { clearInterval(iv); return; }
+          ambientAudio.volume = Math.min(AMB_VOLUME, ambientAudio.volume + step);
+          if (ambientAudio.volume >= AMB_VOLUME) clearInterval(iv);
+        }, 16);
+      } catch (e) { /* fail silently — missing asset won't break game */ }
+    };
+    if (ambientAudio) { fadeOut(ambientAudio, startNew); ambientAudio = null; }
+    else { ambientName = null; startNew(); }
+  }
+
+  function stopAmbient() {
+    if (ambientAudio) {
+      fadeOut(ambientAudio, () => {});
+      ambientAudio = null;
+    }
+    ambientName = null;
+  }
+
+  function syncAmbientForLevel(level) {
+    const cfg = typeof LEVEL_CONFIG !== "undefined" ? LEVEL_CONFIG[level] : null;
+    const name = cfg?.env?.ambientTrack || null;
+    if (name) playAmbient(name);
+    else stopAmbient();
+  }
+
+  return { unlock, init, playSfx, playUiClick, playAmbient, stopAmbient, syncAmbientForLevel };
+})();
+
 // ===== Scene / Renderer =====
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x8bbde8, 60, 220);
@@ -1058,6 +1193,7 @@ function collectCoin(coin) {
   coin.mesh.visible = false;
   coin.shadow.visible = false;
   onCoinCollected();
+  AudioMgr.playSfx("coin", { pitchVar: 0.15 });
   // Extra burst for final coin
   if (coinsCollectedThisRun === TOTAL_COINS_PER_LEVEL) {
     spawnCoinBurst(coin.mesh.position.x, coin.mesh.position.y + 0.3, coin.mesh.position.z);
@@ -4677,6 +4813,239 @@ function buildLevel9() {
 }
 
 let currentLevel = 1;
+let selectedColor = "0xEE2222";
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LEVEL_CONFIG — centralized level metadata + presentation rules
+// ═══════════════════════════════════════════════════════════════════════════
+const LEVEL_CONFIG = {
+  0: {
+    name: "Parkour Tutorial", shortName: "Tutorial", starTime: 30,
+    builder: buildLevel0, bgBuilder: null, neonUnderglow: false,
+    fallY: -8,
+    levelMat: { roughness: 0.78, metalness: 0.0, emissive: 0x000000, emissiveInt: 0.00, edgeColor: 0x111100, edgeOpacity: 0.18 },
+    env: {
+      sky: true, background: null,
+      fog: { type: "linear", color: 0xC8EAF8, near: 60, far: 200 },
+      gravity: -26,
+      ambient: { intensity: 1.6, color: 0xFFFFFF },
+      skyFill: { intensity: 0.6 },
+      skyUni: { turbidity: 2.0, rayleigh: 1.2, mieCoefficient: 0.004, mieDirectionalG: 0.80, sunElevation: 70, sunAzimuth: 180 },
+      exposure: 0.85,
+      clouds: true,
+      ambientTrack: null,
+    },
+  },
+  1: {
+    name: "Golden Hour", shortName: "Golden Hour", starTime: 45,
+    builder: buildLevel1, bgBuilder: null, neonUnderglow: false,
+    fallY: -8,
+    levelMat: { roughness: 0.88, metalness: 0.00, emissive: 0x000000, emissiveInt: 0.00, edgeColor: 0x000000, edgeOpacity: 0.18 },
+    env: {
+      sky: true, background: null,
+      fog: { type: "linear", color: 0xF0A868, near: 55, far: 210 },
+      gravity: -26,
+      skyUni: { turbidity: 4.0, rayleigh: 2.0, mieCoefficient: 0.008, mieDirectionalG: 0.93, sunElevation: 84, sunAzimuth: 192 },
+      exposure: 0.68,
+      clouds: true,
+      ambientTrack: "wind",
+    },
+  },
+  2: {
+    name: "Above the Canopy", shortName: "Canopy", starTime: 50,
+    builder: buildLevel2, bgBuilder: buildForestBackground, neonUnderglow: false,
+    fallY: -22,
+    levelMat: { roughness: 0.96, metalness: 0.00, emissive: 0x000000, emissiveInt: 0.00, edgeColor: 0x0A1500, edgeOpacity: 0.22 },
+    env: {
+      sky: false, background: 0x4A90D9,
+      fog: { type: "linear", color: 0x4A90D9, near: 90, far: 260 },
+      gravity: -26,
+      skyFill: { intensity: 0 },
+      clouds: "partial",
+      ambientTrack: "wind",
+    },
+  },
+  3: {
+    name: "Cosmic Drift", shortName: "Cosmic", starTime: 55,
+    builder: buildLevel3, bgBuilder: buildSpaceBackground, neonUnderglow: false,
+    fallY: -12, fallType: "space",
+    levelMat: { roughness: 0.15, metalness: 0.55, emissive: 0x000000, emissiveInt: 0.00, edgeColor: 0x222233, edgeOpacity: 0.15 },
+    env: {
+      sky: false, background: 0x00000C,
+      fog: null,
+      gravity: -16,
+      skyFill: { intensity: 0 },
+      clouds: false,
+      meteorTimer: 0.5,
+      ambientTrack: null,
+    },
+  },
+  4: {
+    name: "Volcanic Lava World", shortName: "Volcano", starTime: 60,
+    builder: buildLevel5, bgBuilder: buildVolcanoBackground, neonUnderglow: false,
+    fallY: -15, fallType: "lava",
+    levelMat: { roughness: 0.95, metalness: 0.00, emissive: 0x110200, emissiveInt: 0.18, edgeColor: 0x1A0500, edgeOpacity: 0.15 },
+    env: {
+      sky: false, background: 0x100200,
+      fog: { type: "exp2", color: 0x1A0400, density: 0.008 },
+      gravity: -26,
+      ambient: { intensity: 0.35, color: 0x441100 },
+      skyFill: { intensity: 0 },
+      clouds: false,
+      ambientTrack: "lava",
+    },
+  },
+  5: {
+    name: "Underground Crystal Cave", shortName: "Crystal", starTime: 65,
+    builder: buildLevel4, bgBuilder: buildCaveBackground, neonUnderglow: true,
+    fallY: -18,
+    levelMat: { roughness: 0.45, metalness: 0.18, emissive: 0x000000, emissiveInt: 0.00, edgeColor: 0x001122, edgeOpacity: 0.15 },
+    env: {
+      sky: false, background: 0x05050F,
+      fog: { type: "exp2", color: 0x05050F, density: 0.010 },
+      gravity: -26,
+      ambient: { intensity: 0.22, color: 0x223355 },
+      skyFill: { intensity: 0 },
+      clouds: false,
+      ambientTrack: null,
+    },
+  },
+  6: {
+    name: "Candyland", shortName: "Candy", starTime: 70,
+    builder: buildLevel6, bgBuilder: buildCandyBackground, neonUnderglow: false,
+    fallY: -14,
+    levelMat: { roughness: 0.20, metalness: 0.08, emissive: 0x110011, emissiveInt: 0.06, edgeColor: 0x220022, edgeOpacity: 0.12 },
+    env: {
+      sky: false, background: 0xFFCCEE,
+      fog: { type: "linear", color: 0xFFCCEE, near: 65, far: 215 },
+      gravity: -26,
+      ambient: { intensity: 1.3, color: 0xFFEEFF },
+      skyFill: { intensity: 0.5 },
+      exposure: 0.75,
+      clouds: false,
+      ambientTrack: null,
+    },
+  },
+  7: {
+    name: "Neon City Rooftops", shortName: "Neon City", starTime: 75,
+    builder: buildLevel7, bgBuilder: buildCityBackground, neonUnderglow: true,
+    fallY: -10,
+    levelMat: { roughness: 0.50, metalness: 0.28, emissive: 0x001133, emissiveInt: 0.10, edgeColor: 0x003366, edgeOpacity: 0.28 },
+    env: {
+      sky: false, background: 0x050810,
+      fog: { type: "linear", color: 0x050810, near: 50, far: 180 },
+      gravity: -26,
+      ambient: { intensity: 0.28, color: 0x112233 },
+      skyFill: { intensity: 0 },
+      exposure: 0.54,
+      clouds: false,
+      ambientTrack: null,
+    },
+  },
+  8: {
+    name: "Frozen Sky Peaks", shortName: "Ice Peaks", starTime: 80,
+    builder: buildLevel8, bgBuilder: buildIceBackground, neonUnderglow: false,
+    fallY: -12,
+    levelMat: { roughness: 0.15, metalness: 0.05, emissive: 0x22AACC, emissiveInt: 0.35, edgeColor: 0x00CCEE, edgeOpacity: 0.90, transparent: true, opacity: 0.92, colorTint: 0x4FBDD0, tintStrength: 0.65, iceVisual: true },
+    env: {
+      sky: false, background: 0xcfefff,
+      fog: { type: "linear", color: 0xcfefff, near: 40, far: 180 },
+      gravity: -26,
+      sunLight: { color: 0xffffff, intensity: 1.05, position: [18, 30, 10] },
+      ambient: { intensity: 0.75, color: 0xeaf8ff },
+      skyFill: { intensity: 0 },
+      iceFillLight: { color: 0xbfefff, intensity: 0.45, distance: 120, position: [-25, 18, -30] },
+      exposure: 0.60,
+      clouds: false,
+      ambientTrack: "wind",
+    },
+  },
+  9: {
+    name: "Storm Realm", shortName: "Storm", starTime: 85,
+    builder: buildLevel9, bgBuilder: buildStormBackground, neonUnderglow: false,
+    fallY: -12,
+    levelMat: { roughness: 0.60, metalness: 0.35, emissive: 0x001133, emissiveInt: 0.08, edgeColor: 0x66ccff, edgeOpacity: 0.45, stormVisual: true },
+    env: {
+      sky: false, background: 0x0a1322,
+      fog: { type: "exp2", color: 0x0d1a2e, density: 0.006 },
+      gravity: -26,
+      ambient: { intensity: 0.45, color: 0x2a3a50 },
+      sunLight: { color: 0x6688aa, intensity: 0.6, position: [10, 50, -60] },
+      skyFill: { intensity: 0.20, color: 0x3a4466 },
+      clouds: false,
+      ambientTrack: "storm",
+    },
+  },
+};
+
+// ── Derived accessors (preserves existing API used throughout codebase) ──
+const LEVEL_NAMES       = Object.fromEntries(Object.entries(LEVEL_CONFIG).map(([k, v]) => [k, v.name]));
+const LEVEL_SHORT_NAMES = Object.fromEntries(Object.entries(LEVEL_CONFIG).map(([k, v]) => [k, v.shortName]));
+const LEVEL_STAR_TIMES  = Object.fromEntries(Object.entries(LEVEL_CONFIG).map(([k, v]) => [k, v.starTime]));
+
+// ── Apply level environment from config ──
+function applyLevelEnv(env = {}) {
+  // Sky
+  sky.visible = !!env.sky;
+  scene.background = env.background != null ? new THREE.Color(env.background) : null;
+
+  // Fog
+  if (env.fog == null) scene.fog = null;
+  else if (env.fog.type === "exp2") scene.fog = new THREE.FogExp2(env.fog.color, env.fog.density);
+  else scene.fog = new THREE.Fog(env.fog.color, env.fog.near, env.fog.far);
+
+  // Gravity
+  gravity = env.gravity ?? -26;
+
+  // Ambient (only override if specified)
+  if (env.ambient) {
+    ambientLight.intensity = env.ambient.intensity;
+    ambientLight.color.setHex(env.ambient.color);
+  }
+
+  // Sky fill (only override if specified)
+  if (env.skyFill) {
+    skyFill.intensity = env.skyFill.intensity;
+    if (env.skyFill.color != null) skyFill.color.setHex(env.skyFill.color);
+  }
+
+  // Sun (only override if specified)
+  if (env.sunLight) {
+    sunLight.color.setHex(env.sunLight.color);
+    sunLight.intensity = env.sunLight.intensity;
+    if (env.sunLight.position) sunLight.position.set(...env.sunLight.position);
+  }
+
+  // Sky uniforms (levels 0, 1 only)
+  if (env.skyUni) {
+    skyUni["turbidity"].value       = env.skyUni.turbidity;
+    skyUni["rayleigh"].value        = env.skyUni.rayleigh;
+    skyUni["mieCoefficient"].value  = env.skyUni.mieCoefficient;
+    skyUni["mieDirectionalG"].value = env.skyUni.mieDirectionalG;
+    skyUni["sunPosition"].value.setFromSphericalCoords(1,
+      THREE.MathUtils.degToRad(env.skyUni.sunElevation),
+      THREE.MathUtils.degToRad(env.skyUni.sunAzimuth));
+  }
+
+  // Exposure (only override if specified)
+  if (env.exposure != null) renderer.toneMappingExposure = env.exposure;
+
+  // Clouds
+  if (env.clouds === true) clouds.forEach(c => c.visible = true);
+  else if (env.clouds === "partial") clouds.forEach((c, i) => c.visible = (i >= 6 && i <= 11));
+  else clouds.forEach(c => c.visible = false);
+
+  // Meteor timer (Level 3)
+  if (env.meteorTimer != null) meteorTimer = env.meteorTimer;
+
+  // Ice fill light (Level 8)
+  if (env.iceFillLight) {
+    const fl = env.iceFillLight;
+    iceFillLight = new THREE.PointLight(fl.color, fl.intensity, fl.distance);
+    iceFillLight.position.set(...fl.position);
+    scene.add(iceFillLight);
+  }
+}
 
 function loadLevel(n, skipUI = false) {
   // If skin selector is open (e.g. admin hotkey pressed), dismiss it cleanly
@@ -4687,171 +5056,36 @@ function loadLevel(n, skipUI = false) {
   }
 
   clearLevel();
-  clearSpaceBackground();
-  clearForestBackground();
-  clearCaveBackground();
-  clearVolcanoBackground();
-  clearCandyBackground();
-  clearParkBackground();
-  clearCityBackground();
-  clearStormBackground();
-  clearMeteors();
+  clearSpaceBackground(); clearForestBackground(); clearCaveBackground();
+  clearVolcanoBackground(); clearCandyBackground(); clearParkBackground();
+  clearCityBackground(); clearStormBackground(); clearMeteors();
   currentLevel = n;
 
-  // Per-level platform material personality (read by buildBrightVisual + buildNeonVisual cap)
-  if      (n === 0) levelMat = { roughness: 0.78, metalness: 0.0,  emissive: 0x000000, emissiveInt: 0.00, edgeColor: 0x111100, edgeOpacity: 0.18 }; // park / tutorial
-  else if (n === 1) levelMat = { roughness: 0.88, metalness: 0.00, emissive: 0x000000, emissiveInt: 0.00, edgeColor: 0x000000, edgeOpacity: 0.18 }; // warm sandstone
-  else if (n === 2) levelMat = { roughness: 0.96, metalness: 0.00, emissive: 0x000000, emissiveInt: 0.00, edgeColor: 0x0A1500, edgeOpacity: 0.22 }; // rough timber, green-tinted edges
-  else if (n === 3) levelMat = { roughness: 0.15, metalness: 0.55, emissive: 0x000000, emissiveInt: 0.00, edgeColor: 0x222233, edgeOpacity: 0.15 }; // polished metal
-  else if (n === 4) levelMat = { roughness: 0.95, metalness: 0.00, emissive: 0x110200, emissiveInt: 0.18, edgeColor: 0x1A0500, edgeOpacity: 0.15 }; // scorched rock
-  else if (n === 5) levelMat = { roughness: 0.45, metalness: 0.18, emissive: 0x000000, emissiveInt: 0.00, edgeColor: 0x001122, edgeOpacity: 0.15 }; // wet stone
-  else if (n === 6) levelMat = { roughness: 0.20, metalness: 0.08, emissive: 0x110011, emissiveInt: 0.06, edgeColor: 0x220022, edgeOpacity: 0.12 }; // candy gloss
-  else if (n === 7) levelMat = { roughness: 0.50, metalness: 0.28, emissive: 0x001133, emissiveInt: 0.10, edgeColor: 0x003366, edgeOpacity: 0.28 }; // dark wet concrete
-  else if (n === 9) levelMat = { roughness: 0.60, metalness: 0.35, emissive: 0x001133, emissiveInt: 0.08, edgeColor: 0x66ccff, edgeOpacity: 0.45, stormVisual: true }; // storm metal
-  else              levelMat = { roughness: 0.15, metalness: 0.05, emissive: 0x22AACC, emissiveInt: 0.35, edgeColor: 0x00CCEE, edgeOpacity: 0.90, transparent: true, opacity: 0.92, colorTint: 0x4FBDD0, tintStrength: 0.65, iceVisual: true }; // frosty ice
+  const cfg = LEVEL_CONFIG[n] || LEVEL_CONFIG[1];
+  levelMat = cfg.levelMat;
 
-  neonUnderglow = (n === 5 || n === 7);
+  neonUnderglow = !!cfg.neonUnderglow;
   neonUnderglowCount = 0;
-  if      (n === 0) buildLevel0();
-  else if (n === 1) buildLevel1();
-  else if (n === 2) buildLevel2();
-  else if (n === 3) buildLevel3();
-  else if (n === 4) buildLevel5();   // buildLevel5 has volcano platforms → "Volcanic Lava World"
-  else if (n === 5) buildLevel4();   // buildLevel4 has cave platforms   → "Underground Crystal Cave"
-  else if (n === 6) buildLevel6();
-  else if (n === 7) buildLevel7();
-  else if (n === 8) buildLevel8();
-  else if (n === 9) buildLevel9();
-  else              buildLevel1();
+  cfg.builder();
   neonUnderglow = false;
 
-  // Defaults restored every level switch
+  // Restore defaults before applying level-specific overrides
   ambientLight.intensity = 1.1; ambientLight.color.setHex(0xffffff);
   skyFill.intensity      = 0.4;
-  skyFill.color.setHex(0x9cc8f0);     // restore default color (Level 9 changes it)
-  skyFill.position.set(0, 20, -60);   // restore default position (Level 8 moves it)
-  sunLight.color.setHex(0xfff8e0); sunLight.intensity = 1.6;  // restore warm sun (Level 8 recolors/moves it)
+  skyFill.color.setHex(0x9cc8f0);
+  skyFill.position.set(0, 20, -60);
+  sunLight.color.setHex(0xfff8e0); sunLight.intensity = 1.6;
   sunLight.position.set(sunVec.x * 100, sunVec.y * 100, sunVec.z * 100);
-  if (iceFillLight) { scene.remove(iceFillLight); iceFillLight = null; }  // Level 8 fill light
+  if (iceFillLight) { scene.remove(iceFillLight); iceFillLight = null; }
   renderer.toneMappingExposure = 0.55;
+  meteorTimer = 0;
 
-  if (n === 4) {
-    sky.visible      = false;
-    scene.background = new THREE.Color(0x100200);
-    scene.fog        = new THREE.FogExp2(0x1A0400, 0.008);
-    gravity          = -26;
-    ambientLight.intensity = 0.35; ambientLight.color.setHex(0x441100);
-    skyFill.intensity = 0;
-    clouds.forEach(c => c.visible = false);
-    buildVolcanoBackground();
-  } else if (n === 5) {
-    sky.visible      = false;
-    scene.background = new THREE.Color(0x05050F);
-    scene.fog        = new THREE.FogExp2(0x05050F, 0.010);
-    gravity          = -26;
-    ambientLight.intensity = 0.22; ambientLight.color.setHex(0x223355);
-    skyFill.intensity = 0;
-    clouds.forEach(c => c.visible = false);
-    buildCaveBackground();
-  } else if (n === 3) {
-    sky.visible               = false;
-    scene.background          = new THREE.Color(0x00000C);
-    scene.fog                 = null;
-    gravity                   = -16;
-    meteorTimer               = 0.5;
-    skyFill.intensity         = 0;
-    clouds.forEach(c => c.visible = false);
-    buildSpaceBackground();
-  } else if (n === 2) {
-    sky.visible               = false;
-    scene.background          = new THREE.Color(0x4A90D9);
-    scene.fog                 = new THREE.Fog(0x4A90D9, 90, 260);
-    gravity                   = -26;
-    skyFill.intensity         = 0;
-    clouds.forEach((c, i) => c.visible = (i >= 6 && i <= 11));
-    buildForestBackground();
-  } else if (n === 6) {
-    sky.visible      = false;
-    scene.background = new THREE.Color(0xFFCCEE);
-    scene.fog        = new THREE.Fog(0xFFCCEE, 65, 215);
-    gravity          = -26;
-    ambientLight.intensity = 1.3; ambientLight.color.setHex(0xFFEEFF);
-    skyFill.intensity = 0.5;
-    renderer.toneMappingExposure = 0.75;
-    clouds.forEach(c => c.visible = false);
-    buildCandyBackground();
-  } else if (n === 0) {
-    // Level 0 — bright sunny childrens park
-    sky.visible               = true;
-    scene.background          = null;
-    scene.fog                 = new THREE.Fog(0xC8EAF8, 60, 200);
-    gravity                   = -26;
-    ambientLight.intensity    = 1.6; ambientLight.color.setHex(0xFFFFFF);
-    skyFill.intensity         = 0.6;
-    skyUni["turbidity"].value       = 2.0;
-    skyUni["rayleigh"].value        = 1.2;
-    skyUni["mieCoefficient"].value  = 0.004;
-    skyUni["mieDirectionalG"].value = 0.80;
-    skyUni["sunPosition"].value.setFromSphericalCoords(1,
-      THREE.MathUtils.degToRad(70), THREE.MathUtils.degToRad(180));
-    renderer.toneMappingExposure   = 0.85;
-    clouds.forEach(c => c.visible = true);
-  } else if (n === 7) {
-    sky.visible      = false;
-    scene.background = new THREE.Color(0x050810);
-    scene.fog        = new THREE.Fog(0x050810, 50, 180);
-    gravity          = -26;
-    ambientLight.intensity = 0.28; ambientLight.color.setHex(0x112233);
-    // skyFill.color reset handled in defaults block
-    skyFill.intensity = 0;
-    renderer.toneMappingExposure = 0.54;
-    clouds.forEach(c => c.visible = false);
-    buildCityBackground();
-  } else if (n === 8) {
-    sky.visible      = false;
-    scene.background = new THREE.Color(0xcfefff);
-    scene.fog        = new THREE.Fog(0xcfefff, 40, 180);
-    gravity          = -26;
-    sunLight.color.setHex(0xffffff); sunLight.intensity = 1.05;
-    sunLight.position.set(18, 30, 10);
-    ambientLight.intensity = 0.75; ambientLight.color.setHex(0xeaf8ff);
-    skyFill.intensity = 0;
-    iceFillLight = new THREE.PointLight(0xbfefff, 0.45, 120);
-    iceFillLight.position.set(-25, 18, -30);
-    scene.add(iceFillLight);
-    renderer.toneMappingExposure = 0.60;
-    clouds.forEach(c => c.visible = false);
-    buildIceBackground();
-  } else if (n === 9) {
-    // Level 9 — Storm Realm
-    sky.visible      = false;
-    scene.background = new THREE.Color(0x0a1322);
-    scene.fog        = new THREE.FogExp2(0x0d1a2e, 0.006);
-    gravity          = -26;
-    ambientLight.intensity = 0.45; ambientLight.color.setHex(0x2a3a50);
-    sunLight.color.setHex(0x6688aa); sunLight.intensity = 0.6;
-    sunLight.position.set(10, 50, -60);
-    skyFill.color.setHex(0x3a4466); skyFill.intensity = 0.20;
-    renderer.toneMappingExposure = 0.55;
-    clouds.forEach(c => c.visible = false);
-    buildStormBackground();
-  } else {
-    // Level 1 — golden hour / warm sunrise
-    sky.visible               = true;
-    scene.background          = null;
-    scene.fog                 = new THREE.Fog(0xF0A868, 55, 210);
-    gravity                   = -26;
-    skyUni["turbidity"].value       = 4.0;
-    skyUni["rayleigh"].value        = 2.0;
-    skyUni["mieCoefficient"].value  = 0.008;
-    skyUni["mieDirectionalG"].value = 0.93;
-    skyUni["sunPosition"].value.setFromSphericalCoords(1,
-      THREE.MathUtils.degToRad(84), THREE.MathUtils.degToRad(192));
-    renderer.toneMappingExposure   = 0.68;
-    clouds.forEach(c => c.visible = true);
-  }
+  applyLevelEnv(cfg.env || {});
+  AudioMgr.syncAmbientForLevel(n);
 
-  levelNameHud.textContent = LEVEL_NAMES[n] || "";
+  if (cfg.bgBuilder) cfg.bgBuilder();
+
+  levelNameHud.textContent = cfg.name || "";
   showGameplayHUD(n);
   if (!skipUI) startCountdown(n);
 }
@@ -4984,14 +5218,18 @@ const coinHudEl         = document.getElementById("coin-hud");
 const hudEl             = document.getElementById("hud");
 const hudRightEl        = document.getElementById("hud-right");
 let controlsHidden      = false;
+let isPaused            = false;
+const homeBtnEl         = document.getElementById("home-btn");
 
 function hideGameplayHUD() {
   hudRightEl.classList.remove("visible");
   hudEl.classList.remove("visible", "hiding");
+  homeBtnEl.classList.remove("visible");
 }
 
 function showGameplayHUD(level) {
   hudRightEl.classList.add("visible");
+  homeBtnEl.classList.add("visible");
   if (level === 1) {
     hudEl.classList.remove("hiding");
     hudEl.classList.add("visible");
@@ -5001,6 +5239,71 @@ function showGameplayHUD(level) {
   }
 }
 
+function openPauseMenu() {
+  if (isPaused || skinSelectActive || won || crashed || countdownActive) return;
+  AudioMgr.playUiClick();
+  isPaused = true;
+  homeBtnEl.classList.remove("visible");
+  document.getElementById("pause-overlay").classList.add("active");
+}
+function closePauseMenu() {
+  isPaused = false;
+  document.getElementById("pause-overlay").classList.remove("active");
+  document.getElementById("settings-overlay").classList.remove("active");
+  settingsReturnTo = null;
+  homeBtnEl.classList.add("visible");
+}
+
+// ── Shared settings opener ──
+let settingsReturnTo = null; // "pause" | "home" | null
+function openSettings(from) {
+  AudioMgr.playUiClick();
+  settingsReturnTo = from;
+  ensureSettings(progress);
+  const s = progress.settings;
+  document.getElementById("setting-sfx").checked = s.sfxEnabled;
+  document.getElementById("setting-music").checked = s.musicEnabled;
+  document.getElementById("setting-vibration").checked = s.vibrationEnabled;
+  if (from === "pause") document.getElementById("pause-overlay").classList.remove("active");
+  else if (from === "home") document.getElementById("skin-overlay").classList.remove("active");
+  document.getElementById("settings-overlay").classList.add("active");
+}
+
+// Wire up pause menu buttons
+homeBtnEl.addEventListener("click", openPauseMenu);
+document.getElementById("pause-resume").addEventListener("click", () => { AudioMgr.playUiClick(); closePauseMenu(); });
+document.getElementById("pause-restart").addEventListener("click", () => {
+  AudioMgr.playUiClick();
+  closePauseMenu();
+  loadLevel(currentLevel);
+  reset();
+});
+document.getElementById("pause-settings").addEventListener("click", () => openSettings("pause"));
+document.getElementById("settings-back").addEventListener("click", () => {
+  AudioMgr.playUiClick();
+  document.getElementById("settings-overlay").classList.remove("active");
+  if (settingsReturnTo === "pause") document.getElementById("pause-overlay").classList.add("active");
+  else if (settingsReturnTo === "home") document.getElementById("skin-overlay").classList.add("active");
+  settingsReturnTo = null;
+});
+["sfx", "vibration"].forEach(key => {
+  document.getElementById(`setting-${key}`).addEventListener("change", (e) => {
+    progress.settings[`${key}Enabled`] = e.target.checked;
+    saveProgress(progress);
+  });
+});
+document.getElementById("setting-music").addEventListener("change", (e) => {
+  progress.settings.musicEnabled = e.target.checked;
+  saveProgress(progress);
+  if (!e.target.checked) AudioMgr.stopAmbient();
+  else if (!skinSelectActive) AudioMgr.syncAmbientForLevel(currentLevel);
+});
+document.getElementById("pause-home").addEventListener("click", () => {
+  AudioMgr.playUiClick();
+  closePauseMenu();
+  showHomeScreen();
+});
+
 function hideControlsHUD() {
   if (controlsHidden) return;
   controlsHidden = true;
@@ -5008,39 +5311,7 @@ function hideControlsHUD() {
   hudEl.classList.remove("visible");
 }
 
-const LEVEL_NAMES = {
-  0: "Parkour Tutorial",
-  1: "Golden Hour",
-  2: "Above the Canopy",
-  3: "Cosmic Drift",
-  4: "Volcanic Lava World",
-  5: "Underground Crystal Cave",
-  6: "Candyland",
-  7: "Neon City Rooftops",
-  8: "Frozen Sky Peaks",
-  9: "Storm Realm",
-};
-
-const LEVEL_SHORT_NAMES = {
-  0: "Tutorial",
-  1: "Golden Hour",
-  2: "Canopy",
-  3: "Cosmic",
-  4: "Volcano",
-  5: "Crystal",
-  6: "Candy",
-  7: "Neon City",
-  8: "Ice Peaks",
-  9: "Storm",
-};
-
 const MAX_LEVEL = 9;
-
-// ── Star target times (seconds) — 2-star threshold per level ──
-const LEVEL_STAR_TIMES = {
-  0: 30, 1: 45, 2: 50, 3: 55, 4: 60, 5: 65,
-  6: 70, 7: 75, 8: 80, 9: 85,
-};
 const TOTAL_COINS_PER_LEVEL = 3;
 
 // ===== Local Progress =====
@@ -5061,6 +5332,13 @@ function ensureLevelStats(prog) {
   }
 }
 
+function ensureSettings(prog) {
+  if (!prog.settings) prog.settings = {};
+  if (prog.settings.sfxEnabled == null) prog.settings.sfxEnabled = true;
+  if (prog.settings.musicEnabled == null) prog.settings.musicEnabled = true;
+  if (prog.settings.vibrationEnabled == null) prog.settings.vibrationEnabled = true;
+}
+
 function loadProgress() {
   let prog;
   try {
@@ -5076,6 +5354,7 @@ function loadProgress() {
         selectedVehicleColor: p.selectedVehicleColor || "0xEE2222",
         updatedAt:            p.updatedAt || new Date().toISOString(),
         levelStats:           p.levelStats || {},
+        settings:             p.settings || {},
       };
     }
   } catch (e) { console.warn("Progress load failed:", e); }
@@ -5089,9 +5368,11 @@ function loadProgress() {
       selectedVehicleColor: "0xEE2222",
       updatedAt:            new Date().toISOString(),
       levelStats:           {},
+      settings:             {},
     };
   }
   ensureLevelStats(prog);
+  ensureSettings(prog);
   return prog;
 }
 
@@ -5118,6 +5399,7 @@ async function initProgressFromFirebase() {
     } catch (e) { console.warn("Progress cache update failed:", e); }
   }
   ensureLevelStats(progress);
+  ensureSettings(progress);
 }
 
 function unlockNextLevel(completedLevel) {
@@ -5284,8 +5566,10 @@ function mergeProgress(local, remote) {
     selectedVehicleColor: remote.selectedVehicleColor || local.selectedVehicleColor,
     updatedAt:            new Date().toISOString(),
     levelStats:           mergeLevelStats(local.levelStats, remote.levelStats),
+    settings:             local.settings || {},
   };
   ensureLevelStats(merged);
+  ensureSettings(merged);
   return merged;
 }
 
@@ -5301,7 +5585,11 @@ let coinsCollectedThisRun = 0;
 
 function onCoinCollected() {
   coinsCollectedThisRun++;
-  coinHudEl.textContent = `Coins ${coinsCollectedThisRun} / ${TOTAL_COINS_PER_LEVEL}`;
+  coinHudEl.innerHTML = `<span class="coin-count">\u25CF ${coinsCollectedThisRun}/${TOTAL_COINS_PER_LEVEL}</span> Coins`;
+  // Gold glow pulse on HUD container
+  hudRightEl.classList.remove("coin-glow");
+  void hudRightEl.offsetWidth;
+  hudRightEl.classList.add("coin-glow");
   if (coinsCollectedThisRun === TOTAL_COINS_PER_LEVEL) {
     // Final coin: bigger pulse + "ALL COINS!" flash
     coinHudEl.classList.remove("pop", "coin-complete");
@@ -5463,30 +5751,16 @@ function setupLevelScrollState() {
   });
 }
 
-function showHomeScreen() {
-  hideGameplayHUD();
-  const overlay     = document.getElementById("skin-overlay");
-  const swatches    = overlay.querySelectorAll(".skin-swatch");
-  const continueBtn = document.getElementById("btn-continue");
-  buildLevelGrid();
-  setupLevelScrollState();
-  const levelCells  = document.querySelectorAll(".level-cell");
+// ── renderHomeScreen: updates all home-screen UI from current state (no event listeners) ──
+function renderHomeScreen() {
+  const swatches = document.querySelectorAll(".skin-swatch");
 
-  // Pre-select the stored color (default red)
-  let selectedColor = progress.selectedVehicleColor || "0xEE2222";
+  // Reflect current selectedColor on swatches
   swatches.forEach(s => s.classList.toggle("selected", s.dataset.color === selectedColor));
 
-  swatches.forEach(s => {
-    s.onclick = () => {
-      selectedColor = s.dataset.color;
-      swatches.forEach(x => x.classList.remove("selected"));
-      s.classList.add("selected");
-    };
-  });
-
-  // Continue button — starts at highest unlocked level
-  continueBtn.textContent = `CONTINUE \u2014 LEVEL ${highestUnlockedLevel}`;
-  continueBtn.onclick = () => launchLevel(highestUnlockedLevel, selectedColor);
+  // Continue button label
+  document.getElementById("btn-continue").textContent =
+    `CONTINUE \u2014 LEVEL ${highestUnlockedLevel}`;
 
   // Total progress (stars + coins)
   const totalStars = getTotalStars();
@@ -5504,20 +5778,21 @@ function showHomeScreen() {
   void totalProgressEl.offsetWidth;
   totalProgressEl.classList.add("update");
 
-  // Level grid — mark unlocked / locked / current-highest
+  // Level grid — rebuild tiles + scroll state
+  buildLevelGrid();
+  setupLevelScrollState();
+
+  // Mark unlocked / locked / current-highest (delegation handles clicks)
+  const levelCells = document.querySelectorAll(".level-cell");
   levelCells.forEach(cell => {
     const lvl = parseInt(cell.dataset.level);
     cell.classList.remove("locked", "unlocked", "current-highest");
-    cell.onclick = null;
-
     if (lvl > highestUnlockedLevel) {
       cell.classList.add("locked");
     } else if (lvl === highestUnlockedLevel) {
       cell.classList.add("current-highest");
-      cell.onclick = () => launchLevel(lvl, selectedColor);
     } else {
       cell.classList.add("unlocked");
-      cell.onclick = () => launchLevel(lvl, selectedColor);
     }
   });
 
@@ -5536,44 +5811,74 @@ function showHomeScreen() {
     }
   });
 
-  // ── Reset Progress button ──
-  const resetBtn = document.getElementById("btn-reset-progress");
-  resetBtn.onclick = () => {
+  // Player ID display
+  document.getElementById("player-id-display").textContent = progress.playerId;
+}
+
+// ── bindHomeScreenEvents: attaches persistent listeners once at boot ──
+function bindHomeScreenEvents() {
+  // Settings gear on home screen
+  document.getElementById("home-settings").addEventListener("click", () => openSettings("home"));
+
+  // Vehicle color swatches
+  const swatches = document.querySelectorAll(".skin-swatch");
+  swatches.forEach(s => {
+    s.addEventListener("click", () => {
+      selectedColor = s.dataset.color;
+      swatches.forEach(x => x.classList.remove("selected"));
+      s.classList.add("selected");
+    });
+  });
+
+  // Continue button
+  document.getElementById("btn-continue").addEventListener("click", () => {
+    AudioMgr.playUiClick();
+    launchLevel(highestUnlockedLevel, selectedColor);
+  });
+
+  // Level grid — event delegation
+  document.getElementById("level-grid").addEventListener("click", (e) => {
+    const cell = e.target.closest(".level-cell");
+    if (!cell || cell.classList.contains("locked")) return;
+    AudioMgr.playUiClick();
+    const lvl = parseInt(cell.dataset.level);
+    if (!isNaN(lvl)) launchLevel(lvl, selectedColor);
+  });
+
+  // Reset Progress
+  document.getElementById("btn-reset-progress").addEventListener("click", () => {
+    AudioMgr.playUiClick();
     if (confirm("Reset all progress? This will lock all levels and start you at Level 1. Leaderboard times are kept.")) {
       resetProgress();
       applyVehicleColor("0xEE2222");
       loadLevel(1, true);
-      showHomeScreen();  // re-render with reset state
+      showHomeScreen();
     }
-  };
+  });
 
-  // ── Player ID display ──
-  document.getElementById("player-id-display").textContent = progress.playerId;
-
-  // Copy to clipboard (with fallback)
-  document.getElementById("btn-copy-id").onclick = () => {
+  // Copy Player ID
+  document.getElementById("btn-copy-id").addEventListener("click", () => {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(progress.playerId).then(() => {
-        document.getElementById("btn-copy-id").textContent = "✅";
-        setTimeout(() => document.getElementById("btn-copy-id").textContent = "📋", 1500);
+        document.getElementById("btn-copy-id").textContent = "\u2705";
+        setTimeout(() => document.getElementById("btn-copy-id").textContent = "\uD83D\uDCCB", 1500);
       }).catch(() => {
         prompt("Copy your Player ID:", progress.playerId);
       });
     } else {
       prompt("Copy your Player ID:", progress.playerId);
     }
-  };
+  });
 
-  // Restore from another player ID
-  document.getElementById("btn-restore-id").onclick = async () => {
-    const inputId = prompt("Enter a Player ID to restore progress from another device:");
+  // Restore Player ID
+  document.getElementById("btn-restore-id").addEventListener("click", async () => {
+    const inputId = prompt("Paste a Player ID to restore progress from another device:");
     if (!inputId || !inputId.trim()) return;
     const trimmed = inputId.trim();
     if (trimmed === progress.playerId) { alert("That's your current Player ID."); return; }
     const remote = await loadProgressFromFirebase(trimmed);
-    if (!remote) { alert("No progress found for that Player ID."); return; }
-    if (!confirm(`Found progress: Level ${remote.highestUnlockedLevel} unlocked.\n\nThis will replace your current progress and link this device to the imported Player ID. Continue?`)) return;
-    // Adopt the remote progress
+    if (!remote) { alert("No saved progress found for that Player ID. Check the ID and try again."); return; }
+    if (!confirm(`Found saved progress (Level ${remote.highestUnlockedLevel} unlocked).\n\nThis will replace your current local progress and link this device to the imported Player ID.\n\nThis cannot be undone. Continue?`)) return;
     progress.playerId = trimmed;
     progress.playerName = remote.playerName || progress.playerName || "";
     progress.highestUnlockedLevel = remote.highestUnlockedLevel ?? 1;
@@ -5588,13 +5893,22 @@ function showHomeScreen() {
     applyVehicleColor(progress.selectedVehicleColor);
     loadLevel(progress.currentLevel, true);
     showHomeScreen();
-  };
+    alert("Progress restored successfully! This device is now linked to that Player ID.");
+  });
+}
 
+// ── showHomeScreen: lightweight entry point ──
+function showHomeScreen() {
+  AudioMgr.stopAmbient();
+  hideGameplayHUD();
+  selectedColor = progress.selectedVehicleColor || "0xEE2222";
+  renderHomeScreen();
   skinSelectActive = true;
-  overlay.classList.add("active");
+  document.getElementById("skin-overlay").classList.add("active");
 }
 
 function launchLevel(level, colorStr) {
+  AudioMgr.unlock();
   applyVehicleColor(colorStr);
   // Persist color choice to progress
   progress.selectedVehicleColor = colorStr;
@@ -5765,6 +6079,7 @@ function triggerCrash(floorY = -22) {
   if (currentLevel === 8) spawnIceBurst(player.position);
   else spawnCrashBurst(player.position);
   triggerShake(0.9);
+  AudioMgr.playSfx("crash");
 }
 
 function spawnFireBurst(pos) {
@@ -5812,6 +6127,7 @@ function triggerLavaDeath() {
   player.position.y = -15 + 0.8;
   spawnFireBurst(player.position);
   triggerShake(1.2);
+  AudioMgr.playSfx("crash");
 }
 
 // ===== Meteor streaks (Level 3) =====
@@ -5882,6 +6198,7 @@ function triggerSpaceDeath() {
       obj.material.opacity     = 1.0;
     }
   });
+  AudioMgr.playSfx("crash");
 }
 
 // ===== Leaderboard =====
@@ -5985,16 +6302,19 @@ function showRewardScreen(summary) {
   const nextBtn = document.getElementById("reward-next");
   nextBtn.textContent = summary.isLastLevel ? "FINISH" : "NEXT LEVEL";
   nextBtn.onclick = () => {
+    AudioMgr.playUiClick();
     rewardOverlay.classList.remove("active");
     showNameEntry(summary.finalTime, summary.isLastLevel);
   };
   document.getElementById("reward-retry").onclick = () => {
+    AudioMgr.playUiClick();
     rewardOverlay.classList.remove("active");
     won = false;
     loadLevel(currentLevel);
     reset();
   };
   document.getElementById("reward-home").onclick = () => {
+    AudioMgr.playUiClick();
     rewardOverlay.classList.remove("active");
     won = false;
     showHomeScreen();
@@ -6032,6 +6352,22 @@ let joystickX = 0, joystickY = 0;  // virtual thumbstick axes: -1..+1 (x: right+
 addEventListener("keydown", (e) => {
   if (e.target.tagName === "INPUT") return;
   keys.add(e.code); keys.add(e.key.toLowerCase());
+  if (e.code === "Space" && !e.repeat) jumpBufferTimer = JUMP_BUFFER_MAX;
+  if (e.code === "Escape") {
+    if (settingsReturnTo === "pause") {
+      document.getElementById("settings-overlay").classList.remove("active");
+      document.getElementById("pause-overlay").classList.add("active");
+      settingsReturnTo = null;
+    } else if (settingsReturnTo === "home") {
+      document.getElementById("settings-overlay").classList.remove("active");
+      document.getElementById("skin-overlay").classList.add("active");
+      settingsReturnTo = null;
+    } else if (isPaused) {
+      closePauseMenu();
+    } else if (!skinSelectActive && !won && !crashed && !countdownActive) {
+      openPauseMenu();
+    }
+  }
 });
 addEventListener("keyup", (e) => {
   if (e.target.tagName === "INPUT") return;
@@ -6043,7 +6379,7 @@ addEventListener("keyup", (e) => {
   // ── Jump button (unchanged — adds/removes "Space" in keys Set) ──
   const btnJ = document.getElementById("btn-jump");
   if (btnJ) {
-    btnJ.addEventListener("touchstart",  e => { e.preventDefault(); keys.add("Space"); },    { passive: false });
+    btnJ.addEventListener("touchstart",  e => { e.preventDefault(); keys.add("Space"); jumpBufferTimer = JUMP_BUFFER_MAX; },    { passive: false });
     btnJ.addEventListener("touchend",    e => { e.preventDefault(); keys.delete("Space"); }, { passive: false });
     btnJ.addEventListener("touchcancel", ()  => { keys.delete("Space"); });
   }
@@ -6157,6 +6493,10 @@ const jumpSpeed  = 11.0;
 let yaw          = 0;
 let grounded     = false;
 let groundObject = null;
+const JUMP_BUFFER_MAX = 0.12;  // seconds — remember jump press before landing
+const COYOTE_TIME_MAX = 0.10;  // seconds — grace period after leaving ground
+let jumpBufferTimer   = 0;
+let coyoteTimer       = 0;
 const playerHalf = new THREE.Vector3(0.65, 0.95, 0.65);
 
 // Pre-allocated temporaries to avoid per-frame heap allocations
@@ -6225,6 +6565,10 @@ function reset() {
   facing.set(0, 0, 1);
   grounded      = false;
   groundObject  = null;
+  jumpBufferTimer = 0;
+  coyoteTimer     = 0;
+  isPaused        = false;
+  document.getElementById("pause-overlay").classList.remove("active");
   squashY       = 1;
   squashXZ      = 1;
   shakeIntensity = 0;
@@ -6244,7 +6588,7 @@ function reset() {
   coinsCollectedThisRun = 0;
   resetCoins();
   timerEl.textContent      = formatTime(0);
-  coinHudEl.textContent    = `Coins 0 / ${TOTAL_COINS_PER_LEVEL}`;
+  coinHudEl.innerHTML      = `<span class="coin-count">\u25CF 0/${TOTAL_COINS_PER_LEVEL}</span> Coins`;
   progressFill.style.width = "0%";
   trailHistory.length = 0;
 
@@ -6498,6 +6842,7 @@ function update(dt) {
 
   // ── Player frozen while modals are open ──
   if (won) return;
+  if (isPaused) return;
 
   // ── Timer + progress bar ──
   levelTime += dt;
@@ -6560,12 +6905,17 @@ function update(dt) {
     bodyRef.rotation.x = THREE.MathUtils.lerp(bodyRef.rotation.x, targetLean, 1 - Math.pow(0.02, dt));
   }
 
-  // ── Jump — stretch on launch ──
-  if (keys.has("Space") && grounded) {
+  // ── Jump — stretch on launch (with buffer + coyote time) ──
+  jumpBufferTimer = Math.max(0, jumpBufferTimer - dt);
+  coyoteTimer     = Math.max(0, coyoteTimer - dt);
+  if (jumpBufferTimer > 0 && coyoteTimer > 0) {
     vel.y    = jumpSpeed;
+    AudioMgr.playSfx("jump");
     grounded = false; groundObject = null;
     squashY  = 1.28;    // stretch tall
     squashXZ = 0.80;    // narrow
+    jumpBufferTimer = 0; // consume buffer
+    coyoteTimer     = 0; // consume coyote (prevents double-jump)
   }
 
   // ── Gravity ──
@@ -6600,7 +6950,7 @@ function update(dt) {
         squashY  = 0.58;
         squashXZ = 1.40;
       } else {
-        vel.y = 0; grounded = true; groundObject = p;
+        vel.y = 0; grounded = true; groundObject = p; coyoteTimer = COYOTE_TIME_MAX;
         // Landing feedback — scale with fall speed
         if (!wasGrounded && velYAtImpact < -4) {
           const impact = Math.abs(velYAtImpact);
@@ -6624,7 +6974,7 @@ function update(dt) {
       const playerBottom = player.position.y - playerHalf.y;
       if (playerBottom <= topY + 0.12 && playerBottom >= topY - 0.75) {
         player.position.y = topY + playerHalf.y;
-        vel.y = 0; grounded = true; groundObject = r; break;
+        vel.y = 0; grounded = true; groundObject = r; coyoteTimer = COYOTE_TIME_MAX; break;
       }
     }
   }
@@ -6710,35 +7060,20 @@ function update(dt) {
   }
 
   // ── Fall reset / ground crash / space death ──
-  if (currentLevel === 2 && !crashed && player.position.y - playerHalf.y <= -22) {
-    triggerCrash(-22);
-  }
-  if (currentLevel === 4 && !crashed && player.position.y - playerHalf.y <= -15) {
-    triggerLavaDeath();
-  }
-  if (currentLevel === 5 && !crashed && player.position.y - playerHalf.y <= -18) {
-    triggerCrash(-18);
-  }
-  if (currentLevel === 0 && !crashed && player.position.y - playerHalf.y <= -8) {
-    triggerCrash(-8);
-  }
-  if (currentLevel === 1 && !crashed && player.position.y - playerHalf.y <= -8) {
-    triggerCrash(-8);
-  }
-  if (currentLevel === 6 && !crashed && player.position.y - playerHalf.y <= -14) {
-    triggerCrash(-14);
-  }
-  if (currentLevel === 7 && !crashed && player.position.y - playerHalf.y <= -10) {
-    triggerCrash(-10);
-  }
-  if (currentLevel === 8 && !crashed && player.position.y - playerHalf.y <= -12) {
-    triggerCrash(-12);
-  }
-  if (currentLevel === 9 && !crashed && player.position.y - playerHalf.y <= -12) {
-    triggerCrash(-12);
-  }
-  if (currentLevel === 3 && !spaceDying && player.position.y < -12) {
-    triggerSpaceDeath();
+  // Fall / death thresholds (driven by LEVEL_CONFIG)
+  {
+    const _cfg = LEVEL_CONFIG[currentLevel];
+    if (_cfg) {
+      const fallType = _cfg.fallType || "crash";
+      const fallY = _cfg.fallY ?? -8;
+      if (fallType === "space") {
+        if (!spaceDying && player.position.y < fallY) triggerSpaceDeath();
+      } else if (fallType === "lava") {
+        if (!crashed && player.position.y - playerHalf.y <= fallY) triggerLavaDeath();
+      } else {
+        if (!crashed && player.position.y - playerHalf.y <= fallY) triggerCrash(fallY);
+      }
+    }
   }
   if (!spaceDying && player.position.y < -50) reset();
 
@@ -6752,6 +7087,7 @@ function update(dt) {
       won = true;
       vel.set(0, 0, 0);
       spawnRingBurst(ring.position.clone());
+      AudioMgr.playSfx("complete");
       const summary = getRunRewardSummary(currentLevel, levelTime);
       updateLevelStats(currentLevel, levelTime);
       unlockNextLevel(currentLevel);
@@ -7305,6 +7641,11 @@ function updateStorm(dt, countdown) {
     document.getElementById("boot-loader").classList.remove("active");
   }
   loadLevel(progress.currentLevel, true);
+  AudioMgr.init(); // preload SFX assets in background
+  const unlockAudio = () => AudioMgr.unlock();
+  document.addEventListener("click", unlockAudio, { once: true });
+  document.addEventListener("touchstart", unlockAudio, { once: true });
+  bindHomeScreenEvents();
   showHomeScreen();
 })();
 
