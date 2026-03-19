@@ -53,12 +53,13 @@ const AudioMgr = (() => {
 
   async function init() {
     const base = "assets/audio/";
+    const v = "?v=2";
     await Promise.all([
-      load("coin",     base + "coin_01.wav"),
-      load("jump",     base + "jump_01.wav"),
-      load("crash",    base + "crash_01.wav"),
-      load("complete", base + "complete_01.wav"),
-      load("uiClick",  base + "ui_click_01.wav"),
+      load("coin",     base + "coin_01.wav" + v),
+      load("jump",     base + "jump_01.wav" + v),
+      load("crash",    base + "crash_01.wav" + v),
+      load("complete", base + "complete_01.wav" + v),
+      load("uiClick",  base + "ui_click_01.wav" + v),
     ]);
   }
 
@@ -68,7 +69,7 @@ const AudioMgr = (() => {
     if (!buf) return;
     try {
       const c = getCtx();
-      if (c.state === "suspended") return;
+      if (c.state === "suspended") { c.resume(); return; }
       const src = c.createBufferSource();
       src.buffer = buf;
       if (opts.pitchVar) {
@@ -91,9 +92,9 @@ const AudioMgr = (() => {
   const AMB_FADE_MS = 800;    // fade in/out duration
 
   const ambientMap = {
-    wind:  "assets/audio/amb_wind_01.wav",
-    lava:  "assets/audio/amb_lava_01.wav",
-    storm: "assets/audio/amb_storm_01.wav",
+    wind:  "assets/audio/amb_wind_01.wav?v=2",
+    lava:  "assets/audio/amb_lava_01.wav?v=2",
+    storm: "assets/audio/amb_storm_01.wav?v=2",
   };
 
   function fadeOut(audio, cb) {
